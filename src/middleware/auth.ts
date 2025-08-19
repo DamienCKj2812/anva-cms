@@ -2,9 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import configs from "../configs";
 import { JwtPayload } from "../module/auth/database/models";
-import { ForbiddenError, UnauthorizedError } from "../utils/helper.errors";
-import ProfileService from "../module/profiles/database/services";
-import { Socket } from "socket.io";
+import { UnauthorizedError } from "../utils/helper.errors";
 import { Permissions } from "../utils/helper.permission";
 
 declare global {
@@ -13,51 +11,6 @@ declare global {
       profile?: JwtPayload;
     }
   }
-}
-
-export function socketAuthenticate(context: any) {
-  return async (socket: Socket, next: (err?: Error) => void) => {
-    let token = socket.handshake.auth?.token;
-
-    if (!token) {
-      return next(new UnauthorizedError("Unauthorized"));
-    }
-
-    token = token.replace(/^Bearer\s+/i, "");
-
-    try {
-      const decoded = jwt.verify(token, configs.JWT_SECRET);
-
-      const profileService = context.diContainer!.get("ProfileService");
-      const profile = await profileService.getById(decoded.id);
-
-      if (!profile) {
-        return next(new UnauthorizedError("Unauthorized"));
-      }
-
-      const currentProfile = {
-        id: decoded.id,
-        name: profile.name,
-        userRole: profile.userRole,
-      };
-
-      if (context) {
-        context.currentProfile = currentProfile;
-      }
-      next();
-    } catch (err) {
-      if (err instanceof jwt.TokenExpiredError) {
-        return next(new UnauthorizedError("Token expired"));
-      }
-      if (err instanceof jwt.JsonWebTokenError) {
-        return next(new UnauthorizedError("Invalid token"));
-      }
-      if (err instanceof Error) {
-        return next(err);
-      }
-      return next(new Error("Unknown error occurred during socket authentication"));
-    }
-  };
 }
 
 export function authenticate(context: any) {

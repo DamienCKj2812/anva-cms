@@ -6,10 +6,8 @@ import path from "path";
 import MongoHelper from "./src/utils/helper.mongo";
 import { errorHandler } from "./src/utils/helper.errors";
 import createAppContext from "./src/utils/helper.context";
-import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 import createRouter from "./src/middleware/router";
-import registerSocketHandlers from "./src/module/socket/controller";
 import { createDIContainer } from "./src/utils/helper.diContainer";
 
 const app = express();
@@ -32,16 +30,6 @@ app.use(
 
 app.options("*", cors()); // Enable preflight globally
 
-const io = new SocketIOServer(server, {
-  path: "/ws",
-  cors: {
-    origin: allowedOrigins,
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"],
-    methods: ["GET", "POST"],
-  },
-});
-
 (async () => {
   const db = await MongoHelper.getInstance().connect();
 
@@ -52,7 +40,6 @@ const io = new SocketIOServer(server, {
 
   app.use("/api", createRouter(context));
 
-  registerSocketHandlers(io, context);
   app.use(errorHandler);
 })();
 

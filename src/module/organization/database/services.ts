@@ -10,7 +10,7 @@ class OrganizationService {
   private context: AppContext;
   private db: Db;
   private collection: Collection<Organization>;
-  public readonly collectionName = "organization";
+  public readonly collectionName = "organizations";
   private userService: UserService;
 
   constructor(context: AppContext) {
@@ -80,25 +80,6 @@ class OrganizationService {
 
   async findOne(filter: Partial<Organization>, options?: FindOptions<Organization>): Promise<Organization | null> {
     return await this.collection.findOne(filter, options);
-  }
-
-  private async deleteOrganizationValidation(userId: string) {
-    validateObjectId(userId);
-
-    const user = await this.userService.findOne({ _id: new ObjectId(userId) }, { projection: { name: 1 } });
-
-    if (!user) {
-      throw new NotFoundError("organization not found");
-    }
-
-    if (user.name === "admin") {
-      throw new Error("This admin account cannot be deleted");
-    }
-  }
-
-  async delete(id: string): Promise<void> {
-    await this.deleteOrganizationValidation(id);
-    await this.collection.deleteOne({ _id: new ObjectId(id) });
   }
 }
 

@@ -15,7 +15,7 @@ const organizationController = (context: AppContext) => {
 
   router.post(
     "/create",
-    requirePermission(context, Permissions.USER_CREATE),
+    requirePermission(context, Permissions.ORGANIZATION_CREATE),
     ...withDynamicFieldSettings(organizationService.collectionName, context),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -29,7 +29,7 @@ const organizationController = (context: AppContext) => {
     }
   );
 
-  router.post("/:id/get", requirePermission(context, Permissions.USER_READ), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:id/get", requirePermission(context, Permissions.ORGANIZATION_READ), async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = await organizationService.getById(req.params.id);
       if (!user) {
@@ -42,14 +42,6 @@ const organizationController = (context: AppContext) => {
     }
   });
 
-  router.post("/:id/delete", requirePermission(context, Permissions.USER_DELETE), async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      await organizationService.delete(req.params.id);
-      res.status(200).json(successResponse());
-    } catch (err) {
-      next(err);
-    }
-  });
 
   return router;
 };

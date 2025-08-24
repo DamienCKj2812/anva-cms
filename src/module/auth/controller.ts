@@ -8,12 +8,12 @@ import { AppContext } from "../../utils/helper.context";
 const authController = (context: AppContext) => {
   const router = Router();
   const authService = context.diContainer!.get("AuthService");
-  const profileService = context.diContainer!.get("ProfileService");
+  const userService = context.diContainer!.get("UserService");
 
   router.post("/login", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { name, password } = req.body;
-      const { token, profile } = await authService.login(name, password);
+      const { token, user } = await authService.login(name, password);
 
       // Set token as HttpOnly cookie
       res.cookie("token", token, {
@@ -24,7 +24,7 @@ const authController = (context: AppContext) => {
         path: "/",
       });
 
-      res.cookie("userRole", profile.userRole, {
+      res.cookie("userRole", user.userRole, {
         httpOnly: true, // Must be accessible from client and middleware
         secure: configs.ENVIRONMENT === "production",
         sameSite: configs.ENVIRONMENT === "production" ? "none" : "lax",
@@ -32,7 +32,7 @@ const authController = (context: AppContext) => {
         path: "/",
       });
 
-      res.json(successResponse({ token, profile }));
+      res.json(successResponse({ token, user }));
     } catch (err) {
       next(err);
     }
@@ -40,17 +40,17 @@ const authController = (context: AppContext) => {
 
   router.post("/me", authenticate(context), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (!req.profile?.id) {
+      if (!req.user?.id) {
         throw new UnauthorizedError("Unauthorized");
       }
 
-      const profile = await profileService.getById(req.profile.id);
+      const user = await userService.getById(req.user.id);
 
-      if (!profile) {
-        throw new NotFoundError("profile not found");
+      if (!user) {
+        throw new NotFoundError("User not found");
       }
 
-      res.json(successResponse(profile));
+      res.json(successResponse(user));
     } catch (err) {
       next(err);
     }

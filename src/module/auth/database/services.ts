@@ -3,13 +3,12 @@ import jwt from "jsonwebtoken";
 import { AuthResponse, JwtPayload } from "./models";
 import configs from "../../../configs";
 import { ValidationError } from "../../../utils/helper.errors";
-import ProfileService from "../../profiles/database/services";
 import { BaseService } from "../../core/base-service";
-import { UserRoleEnum } from "../../profiles/database/models";
-import { Permissions } from "../../../utils/helper.permission";
+import { UserRoleEnum } from "../../user/database/models";
+import UserService from "../../user/database/services";
 
 class AuthService extends BaseService {
-  private profileService: ProfileService;
+  private userService: UserService;
   private jwtSecret: string;
 
   constructor(context: any) {
@@ -18,56 +17,40 @@ class AuthService extends BaseService {
   }
 
   async init() {
-    this.profileService = this.getService("ProfileService");
+    this.userService = this.context.diContainer!.get("UserService");
   }
 
   async login(name: string, password: string): Promise<AuthResponse> {
-    if (!this.profileService) {
-      throw new Error("ProfileService is not initialized");
-    }
-
     if (!name || !password) {
       throw new ValidationError("You must enter an name and password");
     }
 
-    const profile = await this.profileService.findOne({ name });
+    const user = await this.userService.findOne({ name });
 
-    if (!profile?.password || !profile?._id) {
+    if (!user?.password || !user?._id) {
       throw new Error("Invalid credentials");
     }
 
-    const isPasswordValid = await bcrypt.compare(password, profile.password);
+    const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new Error("Invalid credentials");
     }
 
-    const profileId = profile._id.toString();
+    const userId = user._id.toString();
     const payload: JwtPayload = {
-      id: profileId,
-      name: profile.name,
-      userRole: profile.userRole as UserRoleEnum,
-      permissions: [
-        Permissions.PROFILE_READ,
-        Permissions.PROFILE_UPDATE,
-        Permissions.CHATBOT_SETTING_READ,
-        Permissions.FLOW_SETTING_READ,
-        Permissions.CHATBOT_SETTING_READ,
-        Permissions.SECTION_CONTENT_READ,
-        Permissions.SECTION_ROOM_SETTING_READ,
-        Permissions.SECTION_CONTENT_READ,
-        Permissions.SECTION_CONTENT_UPDATE,
-      ],
+      id: userId,
+      name: user.name,
+      userRole: user.userRole as UserRoleEnum,
     };
 
     const token = jwt.sign(payload, this.jwtSecret, { expiresIn: "1d" });
 
     return {
       token,
-      profile: {
+      user: {
         id: payload.id,
         name: payload.name,
         userRole: payload.userRole,
-        permissions: payload.permissions,
       },
     };
   }

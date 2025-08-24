@@ -1,7 +1,6 @@
 import multer, { Multer, StorageEngine } from "multer";
 import path from "path";
 import fs from "fs";
-import { AppContext } from "./helper.context";
 
 interface FileUploadConfig {
   allowedMimeTypes: string[];

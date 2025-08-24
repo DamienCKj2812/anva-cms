@@ -1,17 +1,17 @@
 import { Db } from "mongodb";
-import { ContextProfile } from "../module/profiles/database/models";
 import { DIContainer } from "./helper.diContainer";
+import { ContextUser } from "../module/user/database/models";
 
 export interface AppContext {
   mongoDatabase: Db;
-  currentProfile: ContextProfile | null;
+  currentUser: ContextUser | null;
   diContainer: DIContainer | null;
 }
 
 function createAppContext(db: Db): AppContext {
   const context: Partial<AppContext> = {
     mongoDatabase: db,
-    currentProfile: null,
+    currentUser: null,
     diContainer: null,
   };
 

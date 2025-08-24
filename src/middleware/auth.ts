@@ -4,16 +4,18 @@ import configs from "../configs";
 import { JwtPayload } from "../module/auth/database/models";
 import { UnauthorizedError } from "../utils/helper.errors";
 import { Permissions } from "../utils/helper.permission";
+import { AppContext } from "../utils/helper.context";
+import { ContextUser } from "../module/user/database/models";
 
 declare global {
   namespace Express {
     interface Request {
-      profile?: JwtPayload;
+      user?: JwtPayload;
     }
   }
 }
 
-export function authenticate(context: any) {
+export function authenticate(context: AppContext) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const token = req.cookies?.token || req.header("Authorization")?.replace("Bearer ", "");
@@ -24,37 +26,26 @@ export function authenticate(context: any) {
 
       const decoded = jwt.verify(token, configs.JWT_SECRET);
 
-      const profileService = context.diContainer!.get("ProfileService");
-      const profile = await profileService.getById(decoded.id);
+      const userService = context.diContainer!.get("UserService");
+      const user = await userService.getById(decoded.id);
 
-      if (!profile) {
+      if (!user) {
         return next(new UnauthorizedError("Unauthorized"));
       }
 
       // Temp hardcode the permissions
-      const currentProfile = {
+      const currentUser: ContextUser = {
         id: decoded.id,
-        name: profile.name,
-        userRole: profile.userRole,
-        permissions: [
-          Permissions.PROFILE_READ,
-          Permissions.PROFILE_UPDATE,
-          Permissions.CHATBOT_SETTING_READ,
-          Permissions.FLOW_SETTING_READ,
-          Permissions.CHATBOT_SETTING_READ,
-          Permissions.SECTION_CONTENT_READ,
-          Permissions.SECTION_ROOM_SETTING_READ,
-          Permissions.SECTION_ROOM_CREATE,
-          Permissions.SECTION_ROOM_READ,
-          Permissions.SECTION_CONTENT_READ,
-          Permissions.SECTION_CONTENT_UPDATE,
-        ],
+        organizationId: user.organizationId.toString(),
+        name: user.name,
+        userRole: user.userRole,
+        permissions: user.permissions,
       };
 
-      req.profile = currentProfile;
+      req.user = currentUser;
 
       if (context) {
-        context.currentProfile = currentProfile;
+        context.currentUser = currentUser;
       }
 
       next();

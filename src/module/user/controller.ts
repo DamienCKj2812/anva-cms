@@ -7,21 +7,21 @@ import { cleanupUploadedFiles } from "../../utils/helper";
 import { withDynamicFieldSettings } from "../../utils/helper.fieldSetting";
 import { AppContext } from "../../utils/helper.context";
 
-const profileController = (context: AppContext) => {
+const userController = (context: AppContext) => {
   const router = Router();
-  const profileService = context.diContainer!.get("ProfileService");
+  const userService = context.diContainer!.get("UserService");
 
   router.use(authenticate(context));
 
   router.post(
     "/create",
-    requirePermission(Permissions.PROFILE_CREATE),
-    ...withDynamicFieldSettings(profileService.collectionName, context),
+    requirePermission(context, Permissions.USER_CREATE),
+    ...withDynamicFieldSettings(userService.collectionName, context),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         console.log("Creating user with data:", req.body);
-        const profile = await profileService.create(req.body);
-        res.status(201).json(successResponse(profile));
+        const user = await userService.create(req.body);
+        res.status(201).json(successResponse(user));
       } catch (err) {
         await cleanupUploadedFiles(req);
         next(err);
@@ -29,9 +29,9 @@ const profileController = (context: AppContext) => {
     }
   );
 
-  router.post("/get", requirePermission(Permissions.PROFILE_READ_ALL), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/get", requirePermission(context, Permissions.USER_READ_ALL), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { data, metadata } = await profileService.getAll({
+      const { data, metadata } = await userService.getAll({
         ...req.body,
       });
       res.status(200).json(successResponse(data, metadata));
@@ -40,14 +40,14 @@ const profileController = (context: AppContext) => {
     }
   });
 
-  router.post("/:id/get", requirePermission(Permissions.PROFILE_READ), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:id/get", requirePermission(context, Permissions.USER_READ), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const profile = await profileService.getById(req.params.id);
-      if (!profile) {
+      const user = await userService.getById(req.params.id);
+      if (!user) {
         throw new NotFoundError("User not found");
       }
 
-      res.status(200).json(successResponse(profile));
+      res.status(200).json(successResponse(user));
     } catch (err) {
       next(err);
     }
@@ -55,13 +55,12 @@ const profileController = (context: AppContext) => {
 
   router.post(
     "/:id/update",
-    requirePermission(Permissions.PROFILE_UPDATE),
-    ...withDynamicFieldSettings(profileService.collectionName, context),
+    requirePermission(context, Permissions.USER_UPDATE),
+    ...withDynamicFieldSettings(userService.collectionName, context),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const updatedProfile = await profileService.update(req.params.id, req.body);
-
-        res.status(200).json(successResponse(updatedProfile));
+        const updatedUser = await userService.update(req.params.id, req.body);
+        res.status(200).json(successResponse(updatedUser));
       } catch (err) {
         await cleanupUploadedFiles(req);
         next(err);
@@ -69,10 +68,9 @@ const profileController = (context: AppContext) => {
     }
   );
 
-  router.post("/:id/delete", requirePermission(Permissions.PROFILE_DELETE), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:id/delete", requirePermission(context, Permissions.USER_DELETE), async (req: Request, res: Response, next: NextFunction) => {
     try {
-      await profileService.delete(req.params.id);
-
+      await userService.delete(req.params.id);
       res.status(200).json(successResponse());
     } catch (err) {
       next(err);
@@ -82,4 +80,4 @@ const profileController = (context: AppContext) => {
   return router;
 };
 
-export default profileController;
+export default userController;

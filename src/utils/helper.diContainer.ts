@@ -1,10 +1,12 @@
-import ProfileService from "../module/profiles/database/services";
 import AuthService from "../module/auth/database/services";
+import OrganizationService from "../module/organization/database/services";
+import UserService from "../module/user/database/services";
 import { AppContext } from "./helper.context";
 
 export type ServiceMap = {
-  ProfileService: ProfileService;
+  UserService: UserService;
   AuthService: AuthService;
+  OrganizationService: OrganizationService;
 };
 
 export class DIContainer {
@@ -21,19 +23,22 @@ export class DIContainer {
   }
 }
 
-export function createDIContainer(context: AppContext) {
+export async function createDIContainer(context: AppContext) {
   const container = new DIContainer();
   context.diContainer = container;
 
   // Create services
   const authService = new AuthService(context);
-  const profileService = new ProfileService(context);
+  const userService = new UserService(context);
+  const organizationService = new OrganizationService(context);
 
   // Register all services
   container.register("AuthService", authService);
-  container.register("ProfileService", profileService);
+  container.register("UserService", userService);
+  container.register("OrganizationService", organizationService);
 
   // Call init for each service
   authService.init();
-  profileService.init();
+  const organization = await organizationService.init();
+  userService.init(organization);
 }

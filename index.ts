@@ -36,7 +36,7 @@ app.options("*", cors()); // Enable preflight globally
   const context = createAppContext(db);
 
   //  Initialize DI container & services
-  createDIContainer(context); // build and wire services here
+  await createDIContainer(context); // build and wire services here
 
   app.use("/api", createRouter(context));
 

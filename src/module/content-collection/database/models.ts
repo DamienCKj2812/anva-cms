@@ -1,0 +1,19 @@
+import { ObjectId } from "mongodb";
+
+export interface ContentCollection {
+  _id?: ObjectId;
+  organizationId: ObjectId;
+  tenantId: ObjectId;
+  name: string;
+  displayName: string;
+  createdAt: Date;
+  updatedAt?: Date | null;
+  createdBy: ObjectId;
+}
+
+export interface UpdateContentCollectionData {
+  name?: string;
+  displayName?: string;
+}
+
+export type CreateContentCollectionData = Omit<ContentCollection, "_id" | "organizationId" | "createdAt" | "updatedAt" | "createdBy">;

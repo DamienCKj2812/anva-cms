@@ -19,3 +19,11 @@ export function getCurrentUserId(context: AppContext): ObjectId {
 
   return ObjectId.createFromHexString(context.currentUser.id);
 }
+
+export function getCurrentOrganizationId(context: AppContext): ObjectId {
+  if (!context.currentUser?.organizationId) {
+    throw new UnauthorizedError("User not authenticated");
+  }
+
+  return ObjectId.createFromHexString(context.currentUser.organizationId);
+}

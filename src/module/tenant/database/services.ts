@@ -1,6 +1,6 @@
 import { ObjectId, Db, Collection, FindOptions } from "mongodb";
 import { CreateTenantData, Tenant, UpdateTenantData } from "./models";
-import { getCurrentUserId } from "../../../utils/helper.auth";
+import { getCurrentOrganizationId, getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
@@ -26,21 +26,13 @@ class TenantService {
     this.organizationService = this.context.diContainer!.get("OrganizationService");
   }
 
-  private async createValidation(data: CreateTenantData): Promise<CreateTenantData & { organizationId: ObjectId }> {
+  private async createValidation(data: CreateTenantData): Promise<CreateTenantData> {
     const { name, slug } = data;
-    const organizationId = this.context.currentUser?.organizationId;
-    if (!organizationId) {
-      throw new ValidationError('"organizationId" field is required');
-    }
     if (!("name" in data)) {
       throw new ValidationError('"name" field is required');
     }
     if (!("slug" in data)) {
       throw new ValidationError('"slug" field is required');
-    }
-    const existingOrganization = await this.organizationService.getById(organizationId);
-    if (!existingOrganization) {
-      throw new NotFoundError('"Organization" not found');
     }
     if (typeof name !== "string" || !name.trim()) {
       throw new ValidationError("name must be a non-empty string");
@@ -50,20 +42,19 @@ class TenantService {
     }
     return {
       ...data,
-      organizationId: new ObjectId(organizationId),
     };
   }
 
   async create(data: Tenant): Promise<Tenant> {
+    const organizationId = getCurrentOrganizationId(this.context);
     const { name, slug } = await this.createValidation(data);
-    const organizationId = this.context.currentUser?.organizationId;
     const createdBy = getCurrentUserId(this.context);
 
     console.log("Creating tenant:", name);
     const newTenant: Tenant = {
       slug,
       name: name.trim(),
-      organizationId: new ObjectId(organizationId),
+      organizationId,
       createdAt: new Date(),
       createdBy,
     };

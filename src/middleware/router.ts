@@ -3,6 +3,7 @@ import authController from "../module/auth/controller";
 import organizationController from "../module/organization/controller";
 import userController from "../module/user/controller";
 import tenantController from "../module/tenant/controller";
+import contentCollectionController from "../module/content-collection/controller";
 
 const createRouter = (context: any) => {
   const router = Router();
@@ -11,6 +12,7 @@ const createRouter = (context: any) => {
   router.use("/user", userController(context));
   router.use("/organization", organizationController(context));
   router.use("/tenant", tenantController(context));
+  router.use("/content-collection", contentCollectionController(context));
 
   return router;
 };

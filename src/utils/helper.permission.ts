@@ -4,21 +4,30 @@ import { UserRoleEnum } from "../module/user/database/models";
 import { AppContext } from "./helper.context";
 
 export enum Permissions {
+  //! User
   USER_CREATE = "user:create",
   USER_READ = "user:read",
   USER_READ_ALL = "user:readAll",
   USER_UPDATE = "user:update",
   USER_DELETE = "user:delete",
+  //! Organization
   ORGANIZATION_CREATE = "organization:create",
   ORGANIZATION_READ = "organization:read",
   ORGANIZATION_READ_ALL = "organization:readAll",
   ORGANIZATION_UPDATE = "organization:update",
   // ORGANIZATION_DELETE = "organization:delete",
+  //! Tenant
   TENANT_CREATE = "tenant:create",
   TENANT_READ = "tenant:read",
   TENANT_READ_ALL = "tenant:readAll",
   TENANT_UPDATE = "tenant:update",
   // TENANT_DELETE = "tenant:delete",
+  //! Content Collection
+  CONTENT_COLLECTION_CREATE = "contentCollection:create",
+  CONTENT_COLLECTION_READ = "contentCollection:read",
+  CONTENT_COLLECTION_READ_ALL = "contentCollection:readAll",
+  CONTENT_COLLECTION_UPDATE = "contentCollection:update",
+  // CONTENT_COLLECTION_DELETE = "contentCollection:delete",
 }
 
 export function requirePermission(context: AppContext, permission: Permissions) {

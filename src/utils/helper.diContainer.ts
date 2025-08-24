@@ -1,4 +1,5 @@
 import AuthService from "../module/auth/database/services";
+import ContentCollectionService from "../module/content-collection/database/services";
 import OrganizationService from "../module/organization/database/services";
 import TenantService from "../module/tenant/database/services";
 import UserService from "../module/user/database/services";
@@ -9,6 +10,7 @@ export type ServiceMap = {
   AuthService: AuthService;
   OrganizationService: OrganizationService;
   TenantService: TenantService;
+  ContentCollectionService: ContentCollectionService;
 };
 
 export class DIContainer {
@@ -34,16 +36,19 @@ export async function createDIContainer(context: AppContext) {
   const userService = new UserService(context);
   const organizationService = new OrganizationService(context);
   const tenantService = new TenantService(context);
+  const contentCollectionService = new ContentCollectionService(context);
 
   // Register all services
   container.register("AuthService", authService);
   container.register("UserService", userService);
   container.register("OrganizationService", organizationService);
   container.register("TenantService", tenantService);
+  container.register("ContentCollectionService", contentCollectionService);
 
   // Call init for each service
   authService.init();
   const organization = await organizationService.init();
   userService.init(organization);
   tenantService.init();
+  contentCollectionService.init();
 }

@@ -5,10 +5,7 @@ interface ApiResponse<T = any> {
   error?: string;
 }
 
-export const successResponse = <T>(
-  data?: T,
-  metadata?: Record<string, any>
-): ApiResponse<T> => {
+export const successResponse = <T>(data?: T, metadata?: Record<string, any>): ApiResponse<T> => {
   return {
     status: "success",
     data,
@@ -16,10 +13,7 @@ export const successResponse = <T>(
   };
 };
 
-export const errorResponse = (
-  message: string,
-  error: string = ""
-): ApiResponse<null> => {
+export const errorResponse = (message: string, error: any): ApiResponse<null> => {
   return {
     status: "error",
     message,

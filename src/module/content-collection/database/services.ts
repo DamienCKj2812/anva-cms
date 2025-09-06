@@ -5,8 +5,7 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, Validati
 import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
-import OrganizationService from "../../organization/database/services";
-import { ContentCollection, CreateContentCollectionData, UpdateContentCollectionData } from "./models";
+import { ContentCollection, CreateContentCollectionData, DeleteContentCollectionResponse, UpdateContentCollectionData } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Attribute, UpdateAttributeData } from "../../attribute/database/models";
 import { BaseService } from "../../core/base-service";
@@ -288,18 +287,28 @@ class ContentCollectionService extends BaseService {
     return result;
   }
 
-  private async deleteValidation(id: string) {
+  private async deleteValidation(id: string): Promise<{ contentCollection: ContentCollection; nonDeletedAttributes: WithMetaData<Attribute> }> {
     const contentCollection = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { name: 1 } });
-    const attributes = await this.attributeService.getAll({
-      filter: { _id: new ObjectId(id) },
-    });
-    if (attributes.data.length >= 1) {
+    if (!contentCollection) {
+      throw new NotFoundError("content collection not found");
     }
+    const attributes = await this.attributeService.getAll({
+      filter: { contentCollectionId: new ObjectId(id) },
+      projection: { _id: 1, key: 1, label: 1 },
+    });
+    return {
+      contentCollection,
+      nonDeletedAttributes: attributes,
+    };
   }
 
-  async delete(id: string): Promise<void> {
-    await this.deleteValidation(id);
+  async delete(id: string): Promise<DeleteContentCollectionResponse> {
+    const { contentCollection, nonDeletedAttributes } = await this.deleteValidation(id);
+    if (nonDeletedAttributes.data.length > 0) {
+      return { status: "failed", data: nonDeletedAttributes };
+    }
     await this.collection.deleteOne({ _id: new ObjectId(id) });
+    return { status: "success", data: contentCollection };
   }
 }
 

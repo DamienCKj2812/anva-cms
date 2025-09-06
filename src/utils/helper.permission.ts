@@ -27,13 +27,13 @@ export enum Permissions {
   CONTENT_COLLECTION_READ = "contentCollection:read",
   CONTENT_COLLECTION_READ_ALL = "contentCollection:readAll",
   CONTENT_COLLECTION_UPDATE = "contentCollection:update",
-  // CONTENT_COLLECTION_DELETE = "contentCollection:delete",
+  CONTENT_COLLECTION_DELETE = "contentCollection:delete",
   //! Attribute Collection
   ATTRIBUTE_COLLECTION_CREATE = "attributeCollection:create",
   ATTRIBUTE_COLLECTION_READ = "attributeCollection:read",
   ATTRIBUTE_COLLECTION_READ_ALL = "attributeCollection:readAll",
   ATTRIBUTE_COLLECTION_UPDATE = "attributeCollection:update",
-  // ATTRIBUTE_COLLECTION_DELETE = "attributeCollection:delete",
+  ATTRIBUTE_COLLECTION_DELETE = "attributeCollection:delete",
 }
 
 export function requirePermission(context: AppContext, permission: Permissions) {

@@ -18,4 +18,9 @@ export interface UpdateContentCollectionData {
   displayName?: string;
 }
 
+export interface DeleteContentCollectionResponse {
+  status: "success" | "failed";
+  data: any;
+}
+
 export type CreateContentCollectionData = Omit<ContentCollection, "_id" | "organizationId" | "createdAt" | "updatedAt" | "createdBy">;

@@ -8,9 +8,9 @@ import { AppContext } from "../../../utils/helper.context";
 import { Attribute, AttributeTypeEnum, CreateAttributeData, FormatTypeEnum, UpdateAttributeData, ValidationRules } from "./models";
 import ContentCollectionService from "../../content-collection/database/services";
 import { ContentCollection } from "../../content-collection/database/models";
+import { BaseService } from "../../core/base-service";
 
-class AttributeService {
-  private context: AppContext;
+class AttributeService extends BaseService {
   private db: Db;
   private collection: Collection<Attribute>;
   public readonly collectionName = "attributes";
@@ -25,13 +25,13 @@ class AttributeService {
   private contentCollectionService: ContentCollectionService;
 
   constructor(context: AppContext) {
-    this.context = context;
+    super(context);
     this.db = context.mongoDatabase;
     this.collection = this.db.collection<Attribute>(this.collectionName);
   }
 
   async init() {
-    this.contentCollectionService = this.context.diContainer!.get("ContentCollectionService");
+    this.contentCollectionService = this.getService("ContentCollectionService");
   }
 
   async validateAttributeValidation(type: AttributeTypeEnum, validation: ValidationRules | undefined, format?: FormatTypeEnum) {
@@ -331,7 +331,6 @@ class AttributeService {
     await this.contentCollectionService.updateSchema(attribute, validatedData);
     return updatedcontentCollection;
   }
-  
 }
 
 export default AttributeService;

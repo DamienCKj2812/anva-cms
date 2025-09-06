@@ -5,22 +5,22 @@ import configs from "../../../configs";
 import { AppContext } from "../../../utils/helper.context";
 import { CreateOrganizationData, Organization } from "./models";
 import UserService from "../../user/database/services";
+import { BaseService } from "../../core/base-service";
 
-class OrganizationService {
-  private context: AppContext;
+class OrganizationService extends BaseService {
   private db: Db;
   private collection: Collection<Organization>;
   public readonly collectionName = "organizations";
   private userService: UserService;
 
   constructor(context: AppContext) {
-    this.context = context;
+    super(context);
     this.db = context.mongoDatabase;
     this.collection = this.db.collection<Organization>(this.collectionName);
   }
 
   async init(): Promise<Organization> {
-    this.userService = this.context.diContainer!.get("UserService");
+    this.userService = this.getService("UserService");
     // Check if there’s already an organization
     let existingOrganization = await this.findOne({});
     if (!existingOrganization) {

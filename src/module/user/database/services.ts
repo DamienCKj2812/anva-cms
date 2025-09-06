@@ -10,9 +10,9 @@ import { AppContext } from "../../../utils/helper.context";
 import { Organization } from "../../organization/database/models";
 import OrganizationService from "../../organization/database/services";
 import { Permissions } from "../../../utils/helper.permission";
+import { BaseService } from "../../core/base-service";
 
-class UserService {
-  private context: AppContext;
+class UserService extends BaseService {
   private db: Db;
   private collection: Collection<User>;
   public readonly collectionName = "users";
@@ -25,13 +25,13 @@ class UserService {
   private organizationService: OrganizationService;
 
   constructor(context: AppContext) {
-    this.context = context;
+    super(context);
     this.db = context.mongoDatabase;
     this.collection = this.db.collection<User>(this.collectionName);
   }
 
   async init(organization: Organization) {
-    this.organizationService = this.context.diContainer!.get("OrganizationService");
+    this.organizationService = this.getService("OrganizationService");
 
     if (!organization || !organization._id) {
       throw new ValidationError("Organization is missing, failed to initialize profile");

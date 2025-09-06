@@ -17,7 +17,7 @@ class AuthService extends BaseService {
   }
 
   async init() {
-    this.userService = this.context.diContainer!.get("UserService");
+    this.userService = this.getService("UserService");
   }
 
   async login(name: string, password: string): Promise<AuthResponse> {

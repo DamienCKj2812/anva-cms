@@ -7,9 +7,9 @@ import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import OrganizationService from "../../organization/database/services";
+import { BaseService } from "../../core/base-service";
 
-class TenantService {
-  private context: AppContext;
+class TenantService extends BaseService {
   private db: Db;
   private collection: Collection<Tenant>;
   public readonly collectionName = "tenants";
@@ -17,13 +17,13 @@ class TenantService {
   private organizationService: OrganizationService;
 
   constructor(context: AppContext) {
-    this.context = context;
+    super(context);
     this.db = context.mongoDatabase;
     this.collection = this.db.collection<Tenant>(this.collectionName);
   }
 
   async init() {
-    this.organizationService = this.context.diContainer!.get("OrganizationService");
+    this.organizationService = this.getService("OrganizationService");
   }
 
   private async createValidation(data: CreateTenantData): Promise<CreateTenantData> {

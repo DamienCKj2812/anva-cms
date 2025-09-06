@@ -9,25 +9,26 @@ import OrganizationService from "../../organization/database/services";
 import { ContentCollection, CreateContentCollectionData, UpdateContentCollectionData } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Attribute, UpdateAttributeData } from "../../attribute/database/models";
+import { BaseService } from "../../core/base-service";
+import AttributeService from "../../attribute/database/services";
 
-class ContentCollectionService {
-  private context: AppContext;
+class ContentCollectionService extends BaseService {
   private db: Db;
   private collection: Collection<ContentCollection>;
   public readonly collectionName = "content-collections";
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentCollectionData> = new Set(["name", "displayName"] as const);
-  private organizationService: OrganizationService;
   private tenantService: TenantService;
+  private attributeService: AttributeService;
 
   constructor(context: AppContext) {
-    this.context = context;
+    super(context);
     this.db = context.mongoDatabase;
     this.collection = this.db.collection<ContentCollection>(this.collectionName);
   }
 
   async init() {
-    this.organizationService = this.context.diContainer!.get("OrganizationService");
-    this.tenantService = this.context.diContainer!.get("TenantService");
+    this.tenantService = this.getService("TenantService");
+    this.attributeService = this.getService("AttributeService");
   }
 
   private async createValidation(organizationId: ObjectId, data: CreateContentCollectionData): Promise<CreateContentCollectionData> {
@@ -285,6 +286,20 @@ class ContentCollectionService {
     }
 
     return result;
+  }
+
+  private async deleteValidation(id: string) {
+    const contentCollection = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { name: 1 } });
+    const attributes = await this.attributeService.getAll({
+      filter: { _id: new ObjectId(id) },
+    });
+    if (attributes.data.length >= 1) {
+    }
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.deleteValidation(id);
+    await this.collection.deleteOne({ _id: new ObjectId(id) });
   }
 }
 

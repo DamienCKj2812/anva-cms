@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { successResponse } from "../../utils/helper.response";
+import { errorResponse, successResponse } from "../../utils/helper.response";
 import { Permissions, requirePermission } from "../../utils/helper.permission";
 import { NotFoundError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
@@ -69,6 +69,19 @@ const attributeController = (context: AppContext) => {
         res.status(200).json(successResponse(attribute));
       } catch (err) {
         await cleanupUploadedFiles(req);
+        next(err);
+      }
+    }
+  );
+
+  router.post(
+    "/:id/delete",
+    requirePermission(context, Permissions.CONTENT_COLLECTION_DELETE),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { status, data } = await attributeService.delete(req.params.id);
+        res.status(200).json(successResponse(data));
+      } catch (err) {
         next(err);
       }
     }

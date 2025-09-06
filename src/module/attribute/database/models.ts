@@ -62,3 +62,8 @@ export type CreateAttributeData = {
   enumValues?: string[];
   validation?: ValidationRules;
 };
+
+export interface DeleteAttributeResponse {
+  status: "success" | "failed";
+  data: any;
+}

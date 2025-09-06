@@ -1,11 +1,19 @@
 import { ObjectId, Db, Collection, FindOptions } from "mongodb";
 import { getCurrentOrganizationId, getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
-import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
+import { NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
-import { Attribute, AttributeTypeEnum, CreateAttributeData, FormatTypeEnum, UpdateAttributeData, ValidationRules } from "./models";
+import {
+  Attribute,
+  AttributeTypeEnum,
+  CreateAttributeData,
+  DeleteAttributeResponse,
+  FormatTypeEnum,
+  UpdateAttributeData,
+  ValidationRules,
+} from "./models";
 import ContentCollectionService from "../../content-collection/database/services";
 import { ContentCollection } from "../../content-collection/database/models";
 import { BaseService } from "../../core/base-service";
@@ -330,6 +338,32 @@ class AttributeService extends BaseService {
     }
     await this.contentCollectionService.updateSchema(attribute, validatedData);
     return updatedcontentCollection;
+  }
+
+  private async deleteValidation(id: string): Promise<{ attribute: Attribute; contentCollection: ContentCollection }> {
+    const attribute = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { key: 1, contentCollectionId: 1 } });
+    if (!attribute) {
+      throw new NotFoundError("attribute not found");
+    }
+    const contentCollection = await this.contentCollectionService.getById(attribute.contentCollectionId.toString());
+    if (!contentCollection) {
+      throw new NotFoundError("content collection not found for this attribute setting");
+    }
+    if (!contentCollection.schema?.properties?.[attribute.key]) {
+      throw new NotFoundError("this attribute is not found in the schema");
+    }
+    return {
+      attribute,
+      contentCollection,
+    };
+  }
+
+  async delete(id: string): Promise<DeleteAttributeResponse> {
+    const { attribute, contentCollection } = await this.deleteValidation(id);
+    await this.collection.deleteOne({ _id: new ObjectId(id) });
+    await this.contentCollectionService.deleteSchema(contentCollection, attribute.key);
+    await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
+    return { status: "success", data: attribute };
   }
 }
 

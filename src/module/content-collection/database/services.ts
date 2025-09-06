@@ -168,6 +168,55 @@ class ContentCollectionService extends BaseService {
     return updatedContentCollection;
   }
 
+  async updateAttributeCount(id: ObjectId): Promise<ContentCollection> {
+    const result = await this.collection.findOneAndUpdate(
+      { _id: id },
+      [
+        {
+          $set: {
+            attributeCount: {
+              $size: {
+                $objectToArray: { $ifNull: ["$schema.properties", {}] },
+              },
+            },
+            updatedAt: "$$NOW",
+          },
+        },
+      ],
+      { returnDocument: "after" }
+    );
+
+    if (!result) {
+      throw new NotFoundError("Content collection not found or failed to update");
+    }
+
+    return result;
+  }
+
+  private async deleteValidation(id: string): Promise<{ contentCollection: ContentCollection; nonDeletedAttributes: WithMetaData<Attribute> }> {
+    const contentCollection = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { name: 1 } });
+    if (!contentCollection) {
+      throw new NotFoundError("content collection not found");
+    }
+    const attributes = await this.attributeService.getAll({
+      filter: { contentCollectionId: new ObjectId(id) },
+      projection: { _id: 1, key: 1, label: 1 },
+    });
+    return {
+      contentCollection,
+      nonDeletedAttributes: attributes,
+    };
+  }
+
+  async delete(id: string): Promise<DeleteContentCollectionResponse> {
+    const { contentCollection, nonDeletedAttributes } = await this.deleteValidation(id);
+    if (nonDeletedAttributes.data.length > 0) {
+      return { status: "failed", data: nonDeletedAttributes };
+    }
+    await this.collection.deleteOne({ _id: new ObjectId(id) });
+    return { status: "success", data: contentCollection };
+  }
+
   async addSchema(id: string, attribute: Attribute): Promise<ContentCollection> {
     const contentCollection = await this.getById(id);
     if (!contentCollection) {
@@ -262,53 +311,42 @@ class ContentCollectionService extends BaseService {
     return updated;
   }
 
-  async updateAttributeCount(id: ObjectId): Promise<ContentCollection> {
-    const result = await this.collection.findOneAndUpdate(
-      { _id: id },
-      [
-        {
-          $set: {
-            attributeCount: {
-              $size: {
-                $objectToArray: { $ifNull: ["$schema.properties", {}] },
-              },
-            },
-            updatedAt: "$$NOW",
-          },
+  async deleteSchema(contentCollection: ContentCollection, attributeKey: string): Promise<ContentCollection> {
+    if (!contentCollection) {
+      throw new NotFoundError("Content collection not found");
+    }
+    const schema = contentCollection.schema || {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    };
+    if (!schema.properties || !schema.properties[attributeKey]) {
+      throw new NotFoundError(`Attribute "${attributeKey}" not found in schema`);
+    }
+
+    delete schema.properties[attributeKey];
+
+    // Remove from required array if exists
+    if (schema.required) {
+      schema.required = schema.required.filter((key: string) => key !== attributeKey);
+    }
+
+    const updated = await this.collection.findOneAndUpdate(
+      { _id: new ObjectId(contentCollection._id) },
+      {
+        $set: {
+          schema,
+          updatedAt: new Date(),
         },
-      ],
+      },
       { returnDocument: "after" }
     );
-
-    if (!result) {
-      throw new NotFoundError("Content collection not found or failed to update");
+    if (!updated) {
+      throw new Error("Failed to update content collection schema after delete");
     }
 
-    return result;
-  }
-
-  private async deleteValidation(id: string): Promise<{ contentCollection: ContentCollection; nonDeletedAttributes: WithMetaData<Attribute> }> {
-    const contentCollection = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { name: 1 } });
-    if (!contentCollection) {
-      throw new NotFoundError("content collection not found");
-    }
-    const attributes = await this.attributeService.getAll({
-      filter: { contentCollectionId: new ObjectId(id) },
-      projection: { _id: 1, key: 1, label: 1 },
-    });
-    return {
-      contentCollection,
-      nonDeletedAttributes: attributes,
-    };
-  }
-
-  async delete(id: string): Promise<DeleteContentCollectionResponse> {
-    const { contentCollection, nonDeletedAttributes } = await this.deleteValidation(id);
-    if (nonDeletedAttributes.data.length > 0) {
-      return { status: "failed", data: nonDeletedAttributes };
-    }
-    await this.collection.deleteOne({ _id: new ObjectId(id) });
-    return { status: "success", data: contentCollection };
+    return updated;
   }
 }
 

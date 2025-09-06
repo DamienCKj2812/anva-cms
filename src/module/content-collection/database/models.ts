@@ -6,6 +6,8 @@ export interface ContentCollection {
   tenantId: ObjectId;
   name: string;
   displayName: string;
+  schema: any | null;
+  attributeCount: number;
   createdAt: Date;
   updatedAt?: Date | null;
   createdBy: ObjectId;

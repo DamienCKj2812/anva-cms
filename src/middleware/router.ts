@@ -4,6 +4,7 @@ import organizationController from "../module/organization/controller";
 import userController from "../module/user/controller";
 import tenantController from "../module/tenant/controller";
 import contentCollectionController from "../module/content-collection/controller";
+import attributeController from "../module/attribute/controller";
 
 const createRouter = (context: any) => {
   const router = Router();
@@ -13,6 +14,7 @@ const createRouter = (context: any) => {
   router.use("/organization", organizationController(context));
   router.use("/tenant", tenantController(context));
   router.use("/content-collection", contentCollectionController(context));
+  router.use("/attribute", attributeController(context));
 
   return router;
 };

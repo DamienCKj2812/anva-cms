@@ -8,7 +8,7 @@ import { AppContext } from "../../../utils/helper.context";
 import OrganizationService from "../../organization/database/services";
 import { ContentCollection, CreateContentCollectionData, UpdateContentCollectionData } from "./models";
 import TenantService from "../../tenant/database/services";
-import { Organization } from "../../organization/database/models";
+import { Attribute, UpdateAttributeData } from "../../attribute/database/models";
 
 class ContentCollectionService {
   private context: AppContext;
@@ -75,6 +75,8 @@ class ContentCollectionService {
       tenantId,
       name: name.trim(),
       displayName: displayName.trim(),
+      schema: null,
+      attributeCount: 0,
       createdAt: new Date(),
       createdBy,
     };
@@ -154,16 +156,135 @@ class ContentCollectionService {
     const updatingFields: Partial<ContentCollection> = {
       ...validatedData,
     };
-    const updatedcontentCollection = await this.collection.findOneAndUpdate(
+    const updatedContentCollection = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
       { returnDocument: "after" }
     );
-    if (!updatedcontentCollection) {
+    if (!updatedContentCollection) {
       throw new NotFoundError("failed to update contentCollection");
     }
 
-    return updatedcontentCollection;
+    return updatedContentCollection;
+  }
+
+  async addSchema(id: string, attribute: Attribute): Promise<ContentCollection> {
+    const contentCollection = await this.getById(id);
+    if (!contentCollection) {
+      throw new NotFoundError("Content collection not found");
+    }
+
+    const schema = contentCollection.schema ?? {};
+    if (schema.type !== "object") schema.type = "object";
+    if (!schema.properties) schema.properties = {};
+    if (!schema.required) schema.required = [];
+    if (schema.additionalProperties === undefined) schema.additionalProperties = false;
+
+    // Build AJV property from attribute
+    const property: any = { type: attribute.type.toLowerCase() };
+    if (attribute.format) {
+      property.format = attribute.format;
+    }
+    if (attribute.validation) {
+      if (attribute.validation.minLength !== undefined) property.minLength = attribute.validation.minLength;
+      if (attribute.validation.maxLength !== undefined) property.maxLength = attribute.validation.maxLength;
+      if (attribute.validation.minimum !== undefined) property.minimum = attribute.validation.minimum;
+      if (attribute.validation.maximum !== undefined) property.maximum = attribute.validation.maximum;
+      if (attribute.validation.pattern !== undefined) property.pattern = attribute.validation.pattern;
+    }
+    if (attribute.enumValues && attribute.enumValues.length > 0) {
+      property.enum = attribute.enumValues;
+    }
+    if (attribute.defaultValue !== undefined) {
+      property.default = attribute.defaultValue;
+    }
+    // Add property to schema, update the schema if already exists
+    schema.properties[attribute.key] = property;
+    // handling the required field in AJV
+    if (attribute.required && !schema.required.includes(attribute.key)) {
+      schema.required.push(attribute.key);
+    }
+    const updated = await this.collection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          schema,
+          updatedAt: new Date(),
+        },
+      },
+      { returnDocument: "after" }
+    );
+    if (!updated) {
+      throw new Error("Failed to update content collection schema");
+    }
+    return updated;
+  }
+
+  async updateSchema(oldAttribute: Attribute, attribute: UpdateAttributeData): Promise<ContentCollection> {
+    const contentCollection = await this.getById(oldAttribute.contentCollectionId.toString());
+    if (!contentCollection) throw new NotFoundError("Content collection not found");
+
+    const schema = contentCollection.schema || { type: "object", properties: {}, required: [], additionalProperties: false };
+
+    const property: any = {
+      type: oldAttribute.type.toLowerCase(),
+    };
+
+    if (attribute.format) property.format = attribute.format;
+    if (attribute.validation) {
+      if (attribute.validation.minLength !== undefined) property.minLength = attribute.validation.minLength;
+      if (attribute.validation.maxLength !== undefined) property.maxLength = attribute.validation.maxLength;
+      if (attribute.validation.minimum !== undefined) property.minimum = attribute.validation.minimum;
+      if (attribute.validation.maximum !== undefined) property.maximum = attribute.validation.maximum;
+      if (attribute.validation.pattern !== undefined) property.pattern = attribute.validation.pattern;
+    }
+    if (attribute.enumValues && attribute.enumValues.length > 0) property.enum = attribute.enumValues;
+    if (attribute.defaultValue !== undefined) property.default = attribute.defaultValue;
+
+    schema.properties[oldAttribute.key] = property;
+
+    const requiredSet = new Set(schema.required || []);
+    if (attribute.required) {
+      requiredSet.add(oldAttribute.key);
+    } else {
+      requiredSet.delete(oldAttribute.key);
+    }
+    schema.required = Array.from(requiredSet);
+
+    const updated = await this.collection.findOneAndUpdate(
+      { _id: new ObjectId(oldAttribute.contentCollectionId) },
+      { $set: { schema, updatedAt: new Date() } },
+      { returnDocument: "after" }
+    );
+
+    if (!updated) throw new Error("Failed to update content collection schema");
+
+    return updated;
+  }
+
+  async updateAttributeCount(id: ObjectId): Promise<ContentCollection> {
+    const result = await this.collection.findOneAndUpdate(
+      { _id: id },
+      [
+        {
+          $set: {
+            attributeCount: {
+              $size: {
+                $objectToArray: { $ifNull: ["$schema.properties", {}] },
+              },
+            },
+            updatedAt: "$$NOW",
+          },
+        },
+      ],
+      { returnDocument: "after" }
+    );
+
+    if (!result) {
+      throw new NotFoundError("Content collection not found or failed to update");
+    }
+
+    return result;
   }
 }
 

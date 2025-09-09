@@ -5,6 +5,7 @@ import userController from "../module/user/controller";
 import tenantController from "../module/tenant/controller";
 import contentCollectionController from "../module/content-collection/controller";
 import attributeController from "../module/attribute/controller";
+import contentController from "../module/content/controller";
 
 const createRouter = (context: any) => {
   const router = Router();
@@ -15,6 +16,7 @@ const createRouter = (context: any) => {
   router.use("/tenant", tenantController(context));
   router.use("/content-collection", contentCollectionController(context));
   router.use("/attribute", attributeController(context));
+  router.use("/content", contentController(context));
 
   return router;
 };

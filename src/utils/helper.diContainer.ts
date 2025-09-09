@@ -1,6 +1,7 @@
 import AttributeService from "../module/attribute/database/services";
 import AuthService from "../module/auth/database/services";
 import ContentCollectionService from "../module/content-collection/database/services";
+import ContentService from "../module/content/database/services";
 import OrganizationService from "../module/organization/database/services";
 import TenantService from "../module/tenant/database/services";
 import UserService from "../module/user/database/services";
@@ -13,6 +14,7 @@ export type ServiceMap = {
   TenantService: TenantService;
   ContentCollectionService: ContentCollectionService;
   AttributeService: AttributeService;
+  ContentService: ContentService;
 };
 
 export class DIContainer {
@@ -40,6 +42,7 @@ export async function createDIContainer(context: AppContext) {
   const tenantService = new TenantService(context);
   const contentCollectionService = new ContentCollectionService(context);
   const attributeService = new AttributeService(context);
+  const contentService = new ContentService(context);
 
   // Register all services
   container.register("AuthService", authService);
@@ -48,6 +51,7 @@ export async function createDIContainer(context: AppContext) {
   container.register("TenantService", tenantService);
   container.register("ContentCollectionService", contentCollectionService);
   container.register("AttributeService", attributeService);
+  container.register("ContentService", contentService);
 
   // Call init for each service
   authService.init();
@@ -56,4 +60,5 @@ export async function createDIContainer(context: AppContext) {
   tenantService.init();
   contentCollectionService.init();
   attributeService.init();
+  contentService.init();
 }

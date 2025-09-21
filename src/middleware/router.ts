@@ -6,6 +6,7 @@ import tenantController from "../module/tenant/controller";
 import contentCollectionController from "../module/content-collection/controller";
 import attributeController from "../module/attribute/controller";
 import contentController from "../module/content/controller";
+import mediaAssetController from "../module/media-asset/controller";
 
 const createRouter = (context: any) => {
   const router = Router();
@@ -17,6 +18,7 @@ const createRouter = (context: any) => {
   router.use("/content-collection", contentCollectionController(context));
   router.use("/attribute", attributeController(context));
   router.use("/content", contentController(context));
+  router.use("/media-asset", mediaAssetController(context));
 
   return router;
 };

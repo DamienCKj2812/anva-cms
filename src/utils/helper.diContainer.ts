@@ -2,10 +2,12 @@ import AttributeService from "../module/attribute/database/services";
 import AuthService from "../module/auth/database/services";
 import ContentCollectionService from "../module/content-collection/database/services";
 import ContentService from "../module/content/database/services";
+import MediaAssetService from "../module/media-asset/database/services";
 import OrganizationService from "../module/organization/database/services";
 import TenantService from "../module/tenant/database/services";
 import UserService from "../module/user/database/services";
 import { AppContext } from "./helper.context";
+import FileUploaderGCSService from "./helper.fileUploadGCSService";
 
 export type ServiceMap = {
   UserService: UserService;
@@ -15,6 +17,8 @@ export type ServiceMap = {
   ContentCollectionService: ContentCollectionService;
   AttributeService: AttributeService;
   ContentService: ContentService;
+  FileUploaderGCSService: FileUploaderGCSService;
+  MediaAssetService: MediaAssetService;
 };
 
 export class DIContainer {
@@ -43,6 +47,8 @@ export async function createDIContainer(context: AppContext) {
   const contentCollectionService = new ContentCollectionService(context);
   const attributeService = new AttributeService(context);
   const contentService = new ContentService(context);
+  const fileUploaderGCSService = new FileUploaderGCSService(context);
+  const mediaAssetService = new MediaAssetService(context);
 
   // Register all services
   container.register("AuthService", authService);
@@ -52,6 +58,8 @@ export async function createDIContainer(context: AppContext) {
   container.register("ContentCollectionService", contentCollectionService);
   container.register("AttributeService", attributeService);
   container.register("ContentService", contentService);
+  container.register("FileUploaderGCSService", fileUploaderGCSService);
+  container.register("MediaAssetService", mediaAssetService);
 
   // Call init for each service
   authService.init();
@@ -61,4 +69,6 @@ export async function createDIContainer(context: AppContext) {
   contentCollectionService.init();
   attributeService.init();
   contentService.init();
+  fileUploaderGCSService.init();
+  mediaAssetService.init();
 }

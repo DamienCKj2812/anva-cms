@@ -13,6 +13,7 @@ export interface User {
   password: string; // Optional for update operations
   userRole: UserRoleEnum;
   permissions: Permissions[];
+  orgBucketName: string | null;
   createdAt?: Date;
   updatedAt?: Date | null;
 }

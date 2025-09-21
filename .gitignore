@@ -1,5 +1,6 @@
 assets
 src/configs/
+gcloud-service-account.json
 
 # Logs
 logs

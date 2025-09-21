@@ -28,10 +28,7 @@ class FileUploader {
     }
   }
 
-  private generateUniqueFilename(
-    directory: string,
-    originalName: string
-  ): string {
+  private generateUniqueFilename(directory: string, originalName: string): string {
     const ext = path.extname(originalName);
     const baseName = path.basename(originalName, ext);
     let counter = 0;
@@ -51,10 +48,7 @@ class FileUploader {
         cb(null, this.config.uploadDirectory);
       },
       filename: (req, file, cb) => {
-        const uniqueName = this.generateUniqueFilename(
-          this.config.uploadDirectory,
-          file.originalname
-        );
+        const uniqueName = this.generateUniqueFilename(this.config.uploadDirectory, file.originalname);
         cb(null, uniqueName);
       },
     });
@@ -68,13 +62,7 @@ class FileUploader {
         } else if (this.config.allowedMimeTypes.includes(file.mimetype)) {
           cb(null, true);
         } else {
-          cb(
-            new Error(
-              `Invalid file type. Allowed types: ${this.config.allowedMimeTypes.join(
-                ", "
-              )}`
-            )
-          );
+          cb(new Error(`Invalid file type. Allowed types: ${this.config.allowedMimeTypes.join(", ")}`));
         }
       },
     });
@@ -88,9 +76,7 @@ class FileUploader {
     return this.upload.array(fieldName, maxCount || this.config.maxFiles);
   }
 
-  public getNamedFieldsMiddleware(
-    fields: { name: string; maxCount?: number }[]
-  ) {
+  public getNamedFieldsMiddleware(fields: { name: string; maxCount?: number }[]) {
     return this.upload.fields(fields);
   }
 
@@ -129,10 +115,7 @@ class FileUploader {
         cb(null, this.config.uploadDirectory);
       },
       filename: (req, file, cb) => {
-        const uniqueName = this.generateUniqueFilename(
-          this.config.uploadDirectory,
-          file.originalname
-        );
+        const uniqueName = this.generateUniqueFilename(this.config.uploadDirectory, file.originalname);
         cb(null, uniqueName);
       },
     });
@@ -155,9 +138,7 @@ class FileUploader {
 
   public async deleteFile(filePath: string): Promise<void> {
     if (!filePath || typeof filePath !== "string") {
-      throw new Error(
-        `Invalid file path: ${filePath}. Path must be a non-empty string`
-      );
+      throw new Error(`Invalid file path: ${filePath}. Path must be a non-empty string`);
     }
 
     try {
@@ -188,9 +169,7 @@ class FileUploader {
         EACCES: "Insufficient permissions to delete file",
       };
 
-      const message = fsError.code
-        ? errorMessages[fsError.code] || "Failed to delete file"
-        : "Failed to delete file";
+      const message = fsError.code ? errorMessages[fsError.code] || "Failed to delete file" : "Failed to delete file";
       throw new Error(`${message}: ${filePath}`);
     }
   }

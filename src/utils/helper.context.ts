@@ -6,6 +6,7 @@ export interface AppContext {
   mongoDatabase: Db;
   currentUser: ContextUser | null;
   diContainer: DIContainer | null;
+  orgBucketName: string | null;
 }
 
 function createAppContext(db: Db): AppContext {
@@ -13,6 +14,7 @@ function createAppContext(db: Db): AppContext {
     mongoDatabase: db,
     currentUser: null,
     diContainer: null,
+    orgBucketName: null,
   };
 
   return context as AppContext;

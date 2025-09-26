@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { successResponse } from "../../utils/helper.response";
-import { Permissions, requirePermission } from "../../utils/helper.permission";
 import { NotFoundError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
@@ -15,7 +14,6 @@ const organizationController = (context: AppContext) => {
 
   router.post(
     "/create",
-    requirePermission(context, Permissions.ORGANIZATION_CREATE),
     ...withDynamicFieldSettings(organizationService.collectionName, context),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -29,7 +27,7 @@ const organizationController = (context: AppContext) => {
     }
   );
 
-  router.post("/:id/get", requirePermission(context, Permissions.ORGANIZATION_READ), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:id/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = await organizationService.getById(req.params.id);
       if (!user) {
@@ -41,7 +39,6 @@ const organizationController = (context: AppContext) => {
       next(err);
     }
   });
-
 
   return router;
 };

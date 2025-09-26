@@ -3,7 +3,6 @@ import jwt from "jsonwebtoken";
 import configs from "../configs";
 import { JwtPayload } from "../module/auth/database/models";
 import { UnauthorizedError } from "../utils/helper.errors";
-import { Permissions } from "../utils/helper.permission";
 import { AppContext } from "../utils/helper.context";
 import { ContextUser } from "../module/user/database/models";
 
@@ -38,8 +37,6 @@ export function authenticate(context: AppContext) {
         id: decoded.id,
         organizationId: user.organizationId.toString(),
         name: user.name,
-        userRole: user.userRole,
-        permissions: user.permissions,
       };
 
       req.user = currentUser;

@@ -4,7 +4,6 @@ import { AuthResponse, JwtPayload } from "./models";
 import configs from "../../../configs";
 import { ValidationError } from "../../../utils/helper.errors";
 import { BaseService } from "../../core/base-service";
-import { UserRoleEnum } from "../../user/database/models";
 import UserService from "../../user/database/services";
 
 class AuthService extends BaseService {
@@ -40,7 +39,6 @@ class AuthService extends BaseService {
     const payload: JwtPayload = {
       id: userId,
       name: user.name,
-      userRole: user.userRole as UserRoleEnum,
     };
 
     const token = jwt.sign(payload, this.jwtSecret, { expiresIn: "1d" });
@@ -50,7 +48,6 @@ class AuthService extends BaseService {
       user: {
         id: payload.id,
         name: payload.name,
-        userRole: payload.userRole,
       },
     };
   }

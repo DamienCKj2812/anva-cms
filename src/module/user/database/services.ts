@@ -1,5 +1,5 @@
 import { ObjectId, Db, Collection, FindOptions } from "mongodb";
-import { CreateUserData, UpdateUserData, User, UserRoleEnum } from "./models";
+import { CreateUserData, UpdateUserData, User } from "./models";
 import { hashPassword } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
@@ -9,19 +9,13 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { Organization } from "../../organization/database/models";
 import OrganizationService from "../../organization/database/services";
-import { Permissions } from "../../../utils/helper.permission";
 import { BaseService } from "../../core/base-service";
 
 class UserService extends BaseService {
   private db: Db;
   private collection: Collection<User>;
   public readonly collectionName = "users";
-  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateUserData> = new Set([
-    "name",
-    "password",
-    "userRole",
-    "permissions",
-  ] as const);
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateUserData> = new Set(["name", "password"] as const);
   private organizationService: OrganizationService;
 
   constructor(context: AppContext) {
@@ -49,8 +43,7 @@ class UserService extends BaseService {
         organizationId: orgId,
         name: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
         password: await hashPassword(configs.DEFAULT_DEVELOPER_ACCOUNT_PASSWORD),
-        userRole: UserRoleEnum.admin,
-        permissions: [],
+        orgBucketName: "",
         createdAt: new Date(),
         updatedAt: null,
       });
@@ -59,7 +52,7 @@ class UserService extends BaseService {
   }
 
   private async createValidation(data: CreateUserData): Promise<CreateUserData & { organizationId: ObjectId }> {
-    const { name, userRole, password, permissions } = data;
+    const { name, password } = data;
     const organizationId = this.context.currentUser?.organizationId;
     if (!organizationId) {
       throw new ValidationError('"organizationId" field is required');
@@ -67,14 +60,8 @@ class UserService extends BaseService {
     if (!("name" in data)) {
       throw new ValidationError('"name" field is required');
     }
-    if (!("userRole" in data)) {
-      throw new ValidationError('"userRole" field is required');
-    }
     if (!("password" in data)) {
       throw new ValidationError('"password" field is required');
-    }
-    if (!("permissions" in data)) {
-      throw new ValidationError('"permissions" field is required');
     }
     const existingOrganization = await this.organizationService.getById(organizationId);
     if (!existingOrganization) {
@@ -83,19 +70,8 @@ class UserService extends BaseService {
     if (typeof name !== "string" || !name.trim()) {
       throw new ValidationError("name must be a non-empty string");
     }
-    if (!Object.values(UserRoleEnum).includes(userRole as UserRoleEnum)) {
-      throw new ValidationError("Invalid Role");
-    }
     if (typeof password !== "string" || password.length < 6) {
       throw new ValidationError("Password must be a string with at least 6 characters");
-    }
-    if (!Array.isArray(permissions)) {
-      throw new ValidationError('"permissions" must be an array');
-    }
-    for (const p of permissions) {
-      if (!Object.values(Permissions).includes(p)) {
-        throw new ValidationError(`${p} is not a valid option`);
-      }
     }
     // Validate conflict values
     const existingUser = await this.collection.findOne({
@@ -113,14 +89,13 @@ class UserService extends BaseService {
   }
 
   async create(data: User): Promise<User> {
-    const { name, organizationId, password, permissions, userRole } = await this.createValidation(data);
+    const { name, organizationId, password } = await this.createValidation(data);
 
     console.log("Creating user:", name);
     const newUser: User = {
       name: name.trim(),
-      userRole,
       organizationId,
-      permissions,
+      orgBucketName: "",
       createdAt: new Date(),
       updatedAt: null,
       password: await hashPassword(password),
@@ -150,10 +125,10 @@ class UserService extends BaseService {
   }
 
   private async updateValidation(user: User, data: UpdateUserData): Promise<Partial<User>> {
-    const { name, userRole, password, permissions } = data;
+    const { name, password } = data;
     let updateUserData: UpdateUserData = { ...data };
 
-    if (!("name" in data) && !("password" in data) && !("permissions" in data) && !("userRole" in data)) {
+    if (!("name" in data) && !("password" in data)) {
       throw new BadRequestError("No valid fields provided for update");
     }
 
@@ -171,34 +146,11 @@ class UserService extends BaseService {
       updateUserData.name = name.trim();
     }
 
-    if ("userRole" in data) {
-      if (!Object.values(UserRoleEnum).includes(userRole as UserRoleEnum)) {
-        throw new ValidationError("Invalid role");
-      }
-    }
-
     if ("password" in data) {
       if (typeof password !== "string" || password.length < 6) {
         throw new ValidationError("Password must be a string with at least 6 characters");
       }
       updateUserData.password = await hashPassword(password);
-    }
-
-    if ("permissions" in data && permissions) {
-      if (!Array.isArray(permissions)) {
-        throw new ValidationError('"permissions" must be an array');
-      }
-
-      const validatedPermissions: Permissions[] = [];
-
-      for (const p of permissions) {
-        if (!Object.values(Permissions).includes(p as Permissions)) {
-          throw new ValidationError(`${p} is not a valid option`);
-        }
-        validatedPermissions.push(p as Permissions);
-      }
-
-      updateUserData.permissions = validatedPermissions;
     }
 
     return { ...updateUserData } as Promise<Partial<User>>;

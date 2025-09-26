@@ -35,50 +35,24 @@ class MediaAssetService extends BaseService {
     await this.collection.createIndex({ tenantId: 1, parentId: 1, name: 1 });
   }
 
-  async createImages(data: CreateFileData, files: Express.Multer.File[], useTransaction: boolean = false): Promise<MediaAsset[]> {
+  async createImages(data: CreateFileData, files: Express.Multer.File[]): Promise<MediaAsset[]> {
     if (!files || files.length === 0) throw new BadRequestError("No files provided");
-    if (!useTransaction) {
-      // Non-transactional: upload first, then insert metadata
-      const uploads = await Promise.all(files.map((f) => this.fileUploaderGCSService.uploadImageToGCS(f)));
-      const assets = await this.createImageBulk(data, files);
-      // Update URLs after bulk insert
-      await this.collection.bulkWrite(
-        assets.map((asset, i) => ({
-          updateOne: {
-            filter: { _id: asset._id },
-            update: { $set: { height: uploads[i].height, width: uploads[i].width, url: uploads[i].url, storageKey: uploads[i].storageKey } },
-          },
-        }))
-      );
-      assets.forEach((a, i) => {
-        a.url = uploads[i].url;
-        a.storageKey = uploads[i].storageKey;
-      });
-      return assets;
-    }
-
-    // Transactional: insert metadata first, then upload after commit
-    const session = await MongoHelper.getInstance().startSession();
-    const insertedAssets: MediaAsset[] = [];
-    try {
-      await session.withTransaction(async () => {
-        const created = await this.createImageBulk(data, files, session);
-        insertedAssets.push(...created);
-      });
-      // After commit → upload to GCS
-      for (let i = 0; i < files.length; i++) {
-        const asset = insertedAssets[i];
-        const { url, storageKey, width, height } = await this.fileUploaderGCSService.uploadImageToGCS(files[i]);
-        await this.collection.updateOne({ _id: asset._id }, { $set: { url, storageKey, width, height } });
-        asset.url = url;
-        asset.storageKey = storageKey;
-        asset.width = width;
-        asset.height = height;
-      }
-      return insertedAssets;
-    } finally {
-      await session.endSession();
-    }
+    const uploads = await Promise.all(files.map((f) => this.fileUploaderGCSService.uploadImageToGCS(f)));
+    const assets = await this.createImageBulk(data, files);
+    // Update URLs after bulk insert
+    await this.collection.bulkWrite(
+      assets.map((asset, i) => ({
+        updateOne: {
+          filter: { _id: asset._id },
+          update: { $set: { height: uploads[i].height, width: uploads[i].width, url: uploads[i].url, storageKey: uploads[i].storageKey } },
+        },
+      }))
+    );
+    assets.forEach((a, i) => {
+      a.url = uploads[i].url;
+      a.storageKey = uploads[i].storageKey;
+    });
+    return assets;
   }
 
   private async createFileValidation(data: CreateFileData): Promise<{ validatedData: CreateFileData; tenant: Tenant; parent: MediaAsset | null }> {
@@ -153,47 +127,25 @@ class MediaAssetService extends BaseService {
     return assets;
   }
 
-  async createVideos(data: CreateFileData, files: Express.Multer.File[], useTransaction: boolean = false): Promise<MediaAsset[]> {
+  async createVideos(data: CreateFileData, files: Express.Multer.File[]): Promise<MediaAsset[]> {
     if (!files || files.length === 0) throw new BadRequestError("No files provided");
 
-    if (!useTransaction) {
-      // Non-transactional: upload first, then insert metadata
-      const uploads = await Promise.all(files.map((f) => this.fileUploaderGCSService.uploadVideoToGCS(f)));
-      const assets = await this.createVideoBulk(data, files);
-      // Update URLs after bulk insert
-      await this.collection.bulkWrite(
-        assets.map((asset, i) => ({
-          updateOne: {
-            filter: { _id: asset._id },
-            update: { $set: { url: uploads[i].url, storageKey: uploads[i].storageKey } },
-          },
-        }))
-      );
-      assets.forEach((a, i) => {
-        a.url = uploads[i].url;
-        a.storageKey = uploads[i].storageKey;
-      });
-      return assets;
-    }
-
-    // Transactional: insert metadata first, then upload after commit
-    const session = await MongoHelper.getInstance().startSession();
-    const insertedAssets: MediaAsset[] = [];
-    try {
-      await session.withTransaction(async () => {
-        const created = await this.createImageBulk(data, files, session);
-        insertedAssets.push(...created);
-      });
-      // After commit → upload to GCS
-      for (let i = 0; i < files.length; i++) {
-        const { url } = await this.fileUploaderGCSService.uploadVideoToGCS(files[i]);
-        await this.collection.updateOne({ _id: insertedAssets[i]._id }, { $set: { url } });
-        insertedAssets[i].url = url;
-      }
-      return insertedAssets;
-    } finally {
-      await session.endSession();
-    }
+    const uploads = await Promise.all(files.map((f) => this.fileUploaderGCSService.uploadVideoToGCS(f)));
+    const assets = await this.createVideoBulk(data, files);
+    // Update URLs after bulk insert
+    await this.collection.bulkWrite(
+      assets.map((asset, i) => ({
+        updateOne: {
+          filter: { _id: asset._id },
+          update: { $set: { url: uploads[i].url, storageKey: uploads[i].storageKey } },
+        },
+      }))
+    );
+    assets.forEach((a, i) => {
+      a.url = uploads[i].url;
+      a.storageKey = uploads[i].storageKey;
+    });
+    return assets;
   }
 
   private async createVideoBulk(data: CreateFileData, files: Express.Multer.File[], session?: ClientSession): Promise<MediaAsset[]> {
@@ -266,38 +218,6 @@ class MediaAssetService extends BaseService {
 
   async findMany(filter: Filter<MediaAsset>, options?: FindOptions<MediaAsset>): Promise<MediaAsset[]> {
     return this.collection.find(filter, options).toArray();
-  }
-
-  private async getUniqueMediaAssetName(tenantId: ObjectId, parentId: ObjectId | null, originalFileName: string): Promise<string> {
-    const ext = path.extname(originalFileName);
-    const baseName = path.basename(originalFileName, ext);
-
-    // Find all files with same base name and extension
-    const regex = new RegExp(`^${baseName}(\\(\\d+\\))?${ext}$`);
-    const existingFiles = await this.collection.find({ tenantId, parentId, name: { $regex: regex } }, { projection: { name: 1 } }).toArray();
-
-    // Collect used suffixes
-    const usedNumbers = new Set<number>();
-    for (const file of existingFiles) {
-      const match = file.name.match(/\((\d+)\)\.[^.]+$/);
-      if (match) {
-        usedNumbers.add(parseInt(match[1], 10));
-      } else {
-        // Base name itself is taken
-        usedNumbers.add(0);
-      }
-    }
-
-    // Find lowest available gap
-    let counter = 0;
-    while (usedNumbers.has(counter)) {
-      counter++;
-    }
-
-    if (counter === 0) {
-      return `${baseName}${ext}`; // original name available
-    }
-    return `${baseName}(${counter})${ext}`;
   }
 
   private async getUniqueMediaAssetNamesBatch(tenantId: ObjectId, parentId: ObjectId | null, originalNames: string[]): Promise<string[]> {

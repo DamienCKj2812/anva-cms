@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { successResponse } from "../../utils/helper.response";
-import { Permissions, requirePermission } from "../../utils/helper.permission";
 import { NotFoundError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
@@ -15,7 +14,6 @@ const userController = (context: AppContext) => {
 
   router.post(
     "/create",
-    requirePermission(context, Permissions.USER_CREATE),
     ...withDynamicFieldSettings(userService.collectionName, context),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -29,7 +27,7 @@ const userController = (context: AppContext) => {
     }
   );
 
-  router.post("/get", requirePermission(context, Permissions.USER_READ_ALL), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { data, metadata } = await userService.getAll({
         ...req.body,
@@ -40,7 +38,7 @@ const userController = (context: AppContext) => {
     }
   });
 
-  router.post("/:id/get", requirePermission(context, Permissions.USER_READ), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:id/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = await userService.getById(req.params.id);
       if (!user) {
@@ -55,7 +53,6 @@ const userController = (context: AppContext) => {
 
   router.post(
     "/:id/update",
-    requirePermission(context, Permissions.USER_UPDATE),
     ...withDynamicFieldSettings(userService.collectionName, context),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
@@ -68,7 +65,7 @@ const userController = (context: AppContext) => {
     }
   );
 
-  router.post("/:id/delete", requirePermission(context, Permissions.USER_DELETE), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {
       await userService.delete(req.params.id);
       res.status(200).json(successResponse());

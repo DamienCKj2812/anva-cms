@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
-import { NotFoundError, UnauthorizedError } from "./helper.errors";
+import { UnauthorizedError } from "./helper.errors";
 import { AppContext } from "./helper.context";
 
 export const hashPassword = async (password: string): Promise<string> => {
@@ -18,12 +18,4 @@ export function getCurrentUserId(context: AppContext): ObjectId {
   }
 
   return ObjectId.createFromHexString(context.currentUser.id);
-}
-
-export function getCurrentOrganizationId(context: AppContext): ObjectId {
-  if (!context.currentUser?.organizationId) {
-    throw new UnauthorizedError("User not authenticated");
-  }
-
-  return ObjectId.createFromHexString(context.currentUser.organizationId);
 }

@@ -136,7 +136,7 @@ class FileUploaderGCSService extends BaseService {
   }
 
   public getFolderPrefix(context: AppContext) {
-    return `org-${context.currentUser?.organizationId}/uploads`;
+    return `org-${context.currentUser?.id}/uploads`;
   }
 
   public getStorageKey(file: Express.Multer.File): string {

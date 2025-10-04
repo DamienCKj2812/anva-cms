@@ -7,7 +7,6 @@ export enum MediaTypeEnum {
 
 export interface MediaAsset {
   _id?: ObjectId;
-  organizationId: ObjectId;
   tenantId: ObjectId;
   parentId: ObjectId | null; // under which folder
   mediaType: MediaTypeEnum; // "file" or "folder"

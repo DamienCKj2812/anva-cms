@@ -19,12 +19,12 @@ class AuthService extends BaseService {
     this.userService = this.getService("UserService");
   }
 
-  async login(name: string, password: string): Promise<AuthResponse> {
-    if (!name || !password) {
-      throw new ValidationError("You must enter an name and password");
+  async login(username: string, password: string): Promise<AuthResponse> {
+    if (!username || !password) {
+      throw new ValidationError("You must enter an username and password");
     }
 
-    const user = await this.userService.findOne({ name });
+    const user = await this.userService.findOne({ username });
 
     if (!user?.password || !user?._id) {
       throw new Error("Invalid credentials");
@@ -38,7 +38,7 @@ class AuthService extends BaseService {
     const userId = user._id.toString();
     const payload: JwtPayload = {
       id: userId,
-      name: user.name,
+      username: user.username,
     };
 
     const token = jwt.sign(payload, this.jwtSecret, { expiresIn: "1d" });
@@ -47,7 +47,7 @@ class AuthService extends BaseService {
       token,
       user: {
         id: payload.id,
-        name: payload.name,
+        username: payload.username,
       },
     };
   }

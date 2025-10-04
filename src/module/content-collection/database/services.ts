@@ -1,5 +1,5 @@
 import { ObjectId, Db, Collection, FindOptions } from "mongodb";
-import { getCurrentOrganizationId, getCurrentUserId } from "../../../utils/helper.auth";
+import { getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
@@ -30,7 +30,7 @@ class ContentCollectionService extends BaseService {
     this.attributeService = this.getService("AttributeService");
   }
 
-  private async createValidation(organizationId: ObjectId, data: CreateContentCollectionData): Promise<CreateContentCollectionData> {
+  private async createValidation(data: CreateContentCollectionData): Promise<CreateContentCollectionData> {
     const { tenantId, name, displayName } = data;
     if (!("tenantId" in data)) {
       throw new ValidationError('"tenantId" field is required');
@@ -55,28 +55,19 @@ class ContentCollectionService extends BaseService {
     if (!tenant) {
       throw new NotFoundError("Tenant not found");
     }
-    if (!tenant.organizationId.equals(organizationId)) {
-      throw new ForbiddenError("Not authorized to create this content collection");
-    }
     return data;
   }
 
   async create(data: ContentCollection): Promise<ContentCollection> {
-    const organizationId = getCurrentOrganizationId(this.context);
-    if (!organizationId) {
-      throw new ValidationError('"organizationId" field is required');
-    }
-    const { tenantId, name, displayName } = await this.createValidation(organizationId, data);
+    const { tenantId, name, displayName } = await this.createValidation(data);
     const createdBy = getCurrentUserId(this.context);
 
     console.log("Creating :", name);
     const newContentCollection: ContentCollection = {
-      organizationId,
       tenantId,
       name: name.trim(),
       displayName: displayName.trim(),
       schema: null,
-      attributeCount: 0,
       createdAt: new Date(),
       createdBy,
     };
@@ -120,7 +111,6 @@ class ContentCollectionService extends BaseService {
         throw new ValidationError("Name can only contain letters, numbers, and single hyphens (no spaces)");
       }
       const existingContentCollection = await this.collection.findOne({
-        organizationId: contentCollection.organizationId,
         name: name.trim(),
       });
       if (existingContentCollection) {
@@ -140,16 +130,9 @@ class ContentCollectionService extends BaseService {
 
   async update(id: string, data: UpdateContentCollectionData): Promise<ContentCollection> {
     validateObjectId(id);
-    const organizationId = getCurrentOrganizationId(this.context);
-    if (!organizationId) {
-      throw new ValidationError('"organizationId" field is required');
-    }
     const contentCollection = await this.getById(id);
     if (!contentCollection) {
       throw new NotFoundError("ContentCollection not found");
-    }
-    if (!contentCollection.organizationId.equals(organizationId)) {
-      throw new ForbiddenError("You are not allow to edit this content collection");
     }
     const filteredUpdateData = filterFields(data, ContentCollectionService.ALLOWED_UPDATE_FIELDS);
     const validatedData = await this.updateValidation(contentCollection, filteredUpdateData);

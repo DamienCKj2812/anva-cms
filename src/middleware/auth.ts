@@ -35,8 +35,7 @@ export function authenticate(context: AppContext) {
       // Temp hardcode the permissions
       const currentUser: ContextUser = {
         id: decoded.id,
-        organizationId: user.organizationId.toString(),
-        name: user.name,
+        username: user.username,
       };
 
       req.user = currentUser;

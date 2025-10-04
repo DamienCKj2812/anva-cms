@@ -1,20 +1,18 @@
-import { ObjectId, Db, Collection, FindOptions } from "mongodb";
+import { ObjectId, Db, Collection, FindOptions, Filter } from "mongodb";
 import { CreateTenantData, Tenant, UpdateTenantData } from "./models";
-import { getCurrentOrganizationId, getCurrentUserId } from "../../../utils/helper.auth";
+import { getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
-import OrganizationService from "../../organization/database/services";
 import { BaseService } from "../../core/base-service";
 
 class TenantService extends BaseService {
   private db: Db;
   private collection: Collection<Tenant>;
   public readonly collectionName = "tenants";
-  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateTenantData> = new Set(["name", "slug"] as const);
-  private organizationService: OrganizationService;
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateTenantData> = new Set(["name"] as const);
 
   constructor(context: AppContext) {
     super(context);
@@ -22,23 +20,24 @@ class TenantService extends BaseService {
     this.collection = this.db.collection<Tenant>(this.collectionName);
   }
 
-  async init() {
-    this.organizationService = this.getService("OrganizationService");
-  }
+  async init() {}
 
   private async createValidation(data: CreateTenantData): Promise<CreateTenantData> {
-    const { name, slug } = data;
+    const { name } = data;
+    const createdBy = getCurrentUserId(this.context);
+
     if (!("name" in data)) {
       throw new ValidationError('"name" field is required');
-    }
-    if (!("slug" in data)) {
-      throw new ValidationError('"slug" field is required');
     }
     if (typeof name !== "string" || !name.trim()) {
       throw new ValidationError("name must be a non-empty string");
     }
-    if (typeof slug !== "string" || !slug.trim()) {
-      throw new ValidationError("slug must be a non-empty string");
+    const existingTenant = await this.collection.findOne({
+      name: name.trim(),
+      createdBy,
+    });
+    if (existingTenant) {
+      throw new ConflictError("name already exists");
     }
     return {
       ...data,
@@ -46,15 +45,12 @@ class TenantService extends BaseService {
   }
 
   async create(data: Tenant): Promise<Tenant> {
-    const organizationId = getCurrentOrganizationId(this.context);
-    const { name, slug } = await this.createValidation(data);
+    const { name } = await this.createValidation(data);
     const createdBy = getCurrentUserId(this.context);
 
     console.log("Creating tenant:", name);
     const newTenant: Tenant = {
-      slug,
       name: name.trim(),
-      organizationId,
       createdAt: new Date(),
       createdBy,
     };
@@ -82,8 +78,13 @@ class TenantService extends BaseService {
     return await this.collection.findOne(filter, options);
   }
 
+  async findMany(filter: Filter<Tenant>, options?: FindOptions<Tenant>): Promise<Tenant[]> {
+    return this.collection.find(filter, options).toArray();
+  }
+
   private async updateValidation(tenant: Tenant, data: UpdateTenantData): Promise<Partial<Tenant>> {
-    const { name, slug } = data;
+    const { name } = data;
+    const createdBy = getCurrentUserId(this.context);
     let updateTenantData: UpdateTenantData = { ...data };
 
     if (!("name" in data) && !("slug" in data)) {
@@ -95,19 +96,13 @@ class TenantService extends BaseService {
         throw new ValidationError("name must be a non-empty string");
       }
       const existingTenant = await this.collection.findOne({
-        organizationId: tenant.organizationId,
         name: name.trim(),
+        createdBy,
       });
       if (existingTenant) {
         throw new ConflictError("name already exists");
       }
       updateTenantData.name = name.trim();
-    }
-
-    if ("slug" in data) {
-      if (typeof slug !== "string" || !slug.trim()) {
-        throw new ValidationError("name must be a non-empty string");
-      }
     }
 
     return { ...updateTenantData } as Promise<Partial<Tenant>>;

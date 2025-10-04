@@ -3,7 +3,6 @@ import AuthService from "../module/auth/database/services";
 import ContentCollectionService from "../module/content-collection/database/services";
 import ContentService from "../module/content/database/services";
 import MediaAssetService from "../module/media-asset/database/services";
-import OrganizationService from "../module/organization/database/services";
 import TenantService from "../module/tenant/database/services";
 import UserService from "../module/user/database/services";
 import { AppContext } from "./helper.context";
@@ -12,7 +11,6 @@ import FileUploaderGCSService from "./helper.fileUploadGCSService";
 export type ServiceMap = {
   UserService: UserService;
   AuthService: AuthService;
-  OrganizationService: OrganizationService;
   TenantService: TenantService;
   ContentCollectionService: ContentCollectionService;
   AttributeService: AttributeService;
@@ -42,7 +40,6 @@ export async function createDIContainer(context: AppContext) {
   // Create services
   const authService = new AuthService(context);
   const userService = new UserService(context);
-  const organizationService = new OrganizationService(context);
   const tenantService = new TenantService(context);
   const contentCollectionService = new ContentCollectionService(context);
   const attributeService = new AttributeService(context);
@@ -53,7 +50,6 @@ export async function createDIContainer(context: AppContext) {
   // Register all services
   container.register("AuthService", authService);
   container.register("UserService", userService);
-  container.register("OrganizationService", organizationService);
   container.register("TenantService", tenantService);
   container.register("ContentCollectionService", contentCollectionService);
   container.register("AttributeService", attributeService);
@@ -63,8 +59,7 @@ export async function createDIContainer(context: AppContext) {
 
   // Call init for each service
   authService.init();
-  const organization = await organizationService.init();
-  userService.init(organization);
+  userService.init();
   tenantService.init();
   contentCollectionService.init();
   attributeService.init();

@@ -1,6 +1,5 @@
 import { Router } from "express";
 import authController from "../module/auth/controller";
-import organizationController from "../module/organization/controller";
 import userController from "../module/user/controller";
 import tenantController from "../module/tenant/controller";
 import contentCollectionController from "../module/content-collection/controller";
@@ -13,7 +12,6 @@ const createRouter = (context: any) => {
 
   router.use("/auth", authController(context));
   router.use("/user", userController(context));
-  router.use("/organization", organizationController(context));
   router.use("/tenant", tenantController(context));
   router.use("/content-collection", contentCollectionController(context));
   router.use("/attribute", attributeController(context));

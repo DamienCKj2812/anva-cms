@@ -1,10 +1,12 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { successResponse } from "../../utils/helper.response";
-import { NotFoundError } from "../../utils/helper.errors";
+import { ForbiddenError, NotFoundError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { withDynamicFieldSettings } from "../../utils/helper.fieldSetting";
 import { AppContext } from "../../utils/helper.context";
+import { getCurrentUserId } from "../../utils/helper.auth";
+import { ObjectId } from "mongodb";
 
 const tenantController = (context: AppContext) => {
   const router = Router();
@@ -25,10 +27,11 @@ const tenantController = (context: AppContext) => {
 
   router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { data, metadata } = await tenantService.getAll({
-        ...req.body,
+      const userId = getCurrentUserId(context);
+      const tenants = await tenantService.findMany({
+        createdBy: userId,
       });
-      res.status(200).json(successResponse(data, metadata));
+      res.status(200).json(successResponse(tenants));
     } catch (err) {
       next(err);
     }
@@ -36,7 +39,11 @@ const tenantController = (context: AppContext) => {
 
   router.post("/:id/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const tenant = await tenantService.getById(req.params.id);
+      const userId = getCurrentUserId(context);
+      const tenant = await tenantService.findOne({ _id: new ObjectId(req.params.id) });
+      if (!tenant?.createdBy.equals(userId)) {
+        throw new ForbiddenError("Not allow to access this resources");
+      }
       if (!tenant) {
         throw new NotFoundError("tenant not found");
       }

@@ -1,5 +1,5 @@
 import { ObjectId, Db, Collection, FindOptions } from "mongodb";
-import { getCurrentOrganizationId, getCurrentUserId } from "../../../utils/helper.auth";
+import { getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
@@ -96,10 +96,7 @@ class AttributeService extends BaseService {
     }
   }
 
-  private async createValidation(
-    organizationId: ObjectId,
-    data: CreateAttributeData
-  ): Promise<{ validatedData: CreateAttributeData; contentCollection: ContentCollection }> {
+  private async createValidation(data: CreateAttributeData): Promise<{ validatedData: CreateAttributeData; contentCollection: ContentCollection }> {
     const { contentCollectionId, key, label, type, required, format, defaultValue, enumValues, validation } = data;
     if (!("contentCollectionId" in data)) {
       throw new ValidationError('"contentCollectionId" field is required');
@@ -183,14 +180,11 @@ class AttributeService extends BaseService {
   }
 
   async create(data: CreateAttributeData): Promise<Attribute> {
-    const organizationId = getCurrentOrganizationId(this.context);
-    if (!organizationId) {
-      throw new ValidationError('"organizationId" field is required');
-    }
-    const { validatedData, contentCollection } = await this.createValidation(organizationId, data);
+    const { validatedData, contentCollection } = await this.createValidation(data);
     const createdBy = getCurrentUserId(this.context);
 
     console.log("Creating attribute: ", validatedData);
+    const attributeCount = await this.collection.countDocuments({ contentCollectionId: new Object(validatedData.contentCollectionId) });
     const newAttribute: Attribute = {
       contentCollectionId: new ObjectId(validatedData.contentCollectionId),
       key: validatedData.key,
@@ -201,7 +195,7 @@ class AttributeService extends BaseService {
       defaultValue: validatedData.defaultValue,
       enumValues: validatedData.enumValues,
       validation: validatedData.validation,
-      position: contentCollection.attributeCount,
+      position: attributeCount,
       createdBy,
       createdAt: new Date(),
       updatedAt: null,

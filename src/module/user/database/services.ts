@@ -1,22 +1,19 @@
 import { ObjectId, Db, Collection, FindOptions } from "mongodb";
 import { CreateUserData, UpdateUserData, User } from "./models";
-import { hashPassword } from "../../../utils/helper.auth";
+import { getCurrentUserId, hashPassword } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
 import configs from "../../../configs";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
-import { Organization } from "../../organization/database/models";
-import OrganizationService from "../../organization/database/services";
 import { BaseService } from "../../core/base-service";
 
 class UserService extends BaseService {
   private db: Db;
   private collection: Collection<User>;
   public readonly collectionName = "users";
-  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateUserData> = new Set(["name", "password"] as const);
-  private organizationService: OrganizationService;
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateUserData> = new Set(["username", "password"] as const);
 
   constructor(context: AppContext) {
     super(context);
@@ -24,77 +21,57 @@ class UserService extends BaseService {
     this.collection = this.db.collection<User>(this.collectionName);
   }
 
-  async init(organization: Organization) {
-    this.organizationService = this.getService("OrganizationService");
-
-    if (!organization || !organization._id) {
-      throw new ValidationError("Organization is missing, failed to initialize profile");
-    }
-    const orgId = organization._id;
-
+  async init() {
     // Check before insert
     const existingAdmin = await this.collection.findOne({
-      organizationId: orgId,
-      name: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
+      username: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
     });
 
     if (!existingAdmin) {
       await this.collection.insertOne({
-        organizationId: orgId,
-        name: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
+        username: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
         password: await hashPassword(configs.DEFAULT_DEVELOPER_ACCOUNT_PASSWORD),
         orgBucketName: "",
         createdAt: new Date(),
         updatedAt: null,
       });
     }
-    await this.collection.createIndex({ name: 1 }, { unique: true });
+    await this.collection.createIndex({ username: 1 }, { unique: true });
   }
 
-  private async createValidation(data: CreateUserData): Promise<CreateUserData & { organizationId: ObjectId }> {
-    const { name, password } = data;
-    const organizationId = this.context.currentUser?.organizationId;
-    if (!organizationId) {
-      throw new ValidationError('"organizationId" field is required');
-    }
-    if (!("name" in data)) {
-      throw new ValidationError('"name" field is required');
+  private async createValidation(data: CreateUserData): Promise<CreateUserData> {
+    const { username, password } = data;
+    if (!("username" in data)) {
+      throw new ValidationError('"username" field is required');
     }
     if (!("password" in data)) {
       throw new ValidationError('"password" field is required');
     }
-    const existingOrganization = await this.organizationService.getById(organizationId);
-    if (!existingOrganization) {
-      throw new NotFoundError('"Organization" not found');
-    }
-    if (typeof name !== "string" || !name.trim()) {
-      throw new ValidationError("name must be a non-empty string");
+    if (typeof username !== "string" || !username.trim()) {
+      throw new ValidationError("username must be a non-empty string");
     }
     if (typeof password !== "string" || password.length < 6) {
       throw new ValidationError("Password must be a string with at least 6 characters");
     }
     // Validate conflict values
     const existingUser = await this.collection.findOne({
-      name: name.trim(),
-      organizationId: new ObjectId(organizationId),
+      username: username.trim(),
     });
     if (existingUser) {
-      throw new ConflictError("User name already exists");
+      throw new ConflictError("User username already exists");
     }
 
     return {
       ...data,
-      organizationId: new ObjectId(organizationId),
     };
   }
 
   async create(data: User): Promise<User> {
-    const { name, organizationId, password } = await this.createValidation(data);
+    const { username, password } = await this.createValidation(data);
 
-    console.log("Creating user:", name);
+    console.log("Creating user:", username);
     const newUser: User = {
-      name: name.trim(),
-      organizationId,
+      username: username.trim(),
       orgBucketName: "",
       createdAt: new Date(),
       updatedAt: null,
@@ -124,26 +101,27 @@ class UserService extends BaseService {
     return await this.collection.findOne(filter, options);
   }
 
-  private async updateValidation(user: User, data: UpdateUserData): Promise<Partial<User>> {
-    const { name, password } = data;
+  private async updateValidation(data: UpdateUserData): Promise<Partial<User>> {
+    const { username, password } = data;
     let updateUserData: UpdateUserData = { ...data };
+    const userId = getCurrentUserId(this.context);
 
-    if (!("name" in data) && !("password" in data)) {
+    if (!("username" in data) && !("password" in data)) {
       throw new BadRequestError("No valid fields provided for update");
     }
 
-    if ("name" in data) {
-      if (typeof name !== "string" || !name.trim()) {
-        throw new ValidationError("name must be a non-empty string");
+    if ("username" in data) {
+      if (typeof username !== "string" || !username.trim()) {
+        throw new ValidationError("username must be a non-empty string");
       }
       const existingUser = await this.collection.findOne({
-        name: name.trim(),
-        _id: { $ne: user._id },
+        username: username.trim(),
+        _id: { $ne: userId },
       });
       if (existingUser) {
-        throw new ConflictError("name already exists");
+        throw new ConflictError("username already exists");
       }
-      updateUserData.name = name.trim();
+      updateUserData.username = username.trim();
     }
 
     if ("password" in data) {
@@ -156,22 +134,18 @@ class UserService extends BaseService {
     return { ...updateUserData } as Promise<Partial<User>>;
   }
 
-  async update(id: string, data: UpdateUserData): Promise<User> {
-    const user = await this.getById(id);
-    if (!user) {
-      throw new NotFoundError("User not found");
-    }
-
+  async update(data: UpdateUserData): Promise<User> {
+    const userId = getCurrentUserId(this.context);
     const filteredUpdateData = filterFields(data, UserService.ALLOWED_UPDATE_FIELDS);
 
-    const validatedData = await this.updateValidation(user, filteredUpdateData);
+    const validatedData = await this.updateValidation(filteredUpdateData);
 
     const updatingFields: Partial<User> = {
       ...validatedData,
     };
 
     const updatedUser = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
+      { _id: userId },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
       { returnDocument: "after", projection: { password: 0 } }
     );
@@ -186,13 +160,13 @@ class UserService extends BaseService {
   private async deleteUserValidation(id: string) {
     validateObjectId(id);
 
-    const user = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { name: 1 } });
+    const user = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { username: 1 } });
 
     if (!user) {
       throw new NotFoundError("user not found");
     }
 
-    if (user.name === "admin") {
+    if (user.username === "admin") {
       throw new Error("This admin account cannot be deleted");
     }
   }

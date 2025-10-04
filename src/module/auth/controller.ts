@@ -1,9 +1,10 @@
-import { NextFunction, Request, Response, Router } from "express";
+import { CookieOptions, NextFunction, Request, Response, Router } from "express";
 import { successResponse } from "../../utils/helper.response";
 import configs from "../../configs";
 import { authenticate } from "../../middleware/auth";
 import { NotFoundError, UnauthorizedError } from "../../utils/helper.errors";
 import { AppContext } from "../../utils/helper.context";
+import { ObjectId } from "mongodb";
 
 const authController = (context: AppContext) => {
   const router = Router();
@@ -12,25 +13,20 @@ const authController = (context: AppContext) => {
 
   router.post("/login", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name, password } = req.body;
-      const { token, user } = await authService.login(name, password);
+      const { username, password } = req.body;
+      const { token, user } = await authService.login(username, password);
 
-      // Set token as HttpOnly cookie
-      res.cookie("token", token, {
+      const cookieOptions: CookieOptions = {
         httpOnly: true,
         secure: configs.ENVIRONMENT === "production",
         sameSite: configs.ENVIRONMENT === "production" ? "none" : "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000,
         path: "/",
-      });
+        domain: configs.ENVIRONMENT === "production" ? configs.DOMAIN : undefined, // important
+      };
 
-      res.cookie("userRole", user.userRole, {
-        httpOnly: true, // Must be accessible from client and middleware
-        secure: configs.ENVIRONMENT === "production",
-        sameSite: configs.ENVIRONMENT === "production" ? "none" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-        path: "/",
-      });
+      // Set token as HttpOnly cookie
+      res.cookie("token", token, cookieOptions);
 
       res.json(successResponse({ token, user }));
     } catch (err) {
@@ -44,7 +40,7 @@ const authController = (context: AppContext) => {
         throw new UnauthorizedError("Unauthorized");
       }
 
-      const user = await userService.getById(req.user.id);
+      const user = await userService.findOne({ _id: new ObjectId(req.user?.id) }, { projection: { password: 0 } });
 
       if (!user) {
         throw new NotFoundError("User not found");

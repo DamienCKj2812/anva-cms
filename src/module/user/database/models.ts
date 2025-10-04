@@ -2,8 +2,7 @@ import { ObjectId } from "mongodb";
 
 export interface User {
   _id?: ObjectId;
-  organizationId: ObjectId;
-  name: string;
+  username: string;
   password: string; // Optional for update operations
   orgBucketName: string | null;
   createdAt?: Date;
@@ -12,13 +11,12 @@ export interface User {
 
 export interface ContextUser {
   id: string;
-  name: string;
-  organizationId: string;
+  username: string;
 }
 
 export interface UpdateUserData {
-  name?: string;
+  username?: string;
   password?: string;
 }
 
-export type CreateUserData = Omit<User, "_id" | "organizationId" | "createdAt" | "updatedAt">;
+export type CreateUserData = Omit<User, "_id" | "createdAt" | "updatedAt">;

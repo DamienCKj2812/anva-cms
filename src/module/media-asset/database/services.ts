@@ -9,16 +9,14 @@ import ContentCollectionService from "../../content-collection/database/services
 import { CreateFileData, MediaAsset, MediaTypeEnum } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Tenant } from "../../tenant/database/models";
-import { getCurrentOrganizationId, getCurrentUserId } from "../../../utils/helper.auth";
+import { getCurrentUserId } from "../../../utils/helper.auth";
 import FileUploaderGCSService from "../../../utils/helper.fileUploadGCSService";
 import path from "path";
-import sizeOf from "image-size";
 
 class MediaAssetService extends BaseService {
   private db: Db;
   private collection: Collection<MediaAsset>;
   public readonly collectionName = "media-asset";
-  private contentCollectionService: ContentCollectionService;
   private tenantService: TenantService;
   private fileUploaderGCSService: FileUploaderGCSService;
 
@@ -29,7 +27,6 @@ class MediaAssetService extends BaseService {
   }
 
   async init() {
-    this.contentCollectionService = this.getService("ContentCollectionService");
     this.tenantService = this.getService("TenantService");
     this.fileUploaderGCSService = this.getService("FileUploaderGCSService");
     await this.collection.createIndex({ tenantId: 1, parentId: 1, name: 1 });
@@ -79,7 +76,6 @@ class MediaAssetService extends BaseService {
   }
 
   private async createImageBulk(data: CreateFileData, files: Express.Multer.File[], session?: ClientSession): Promise<MediaAsset[]> {
-    const organizationId = getCurrentOrganizationId(this.context);
     const userId = getCurrentUserId(this.context);
     const { validatedData, tenant, parent } = await this.createFileValidation(data);
 
@@ -99,7 +95,6 @@ class MediaAssetService extends BaseService {
 
       const storageKey = this.fileUploaderGCSService.getStorageKey(file);
       const asset: MediaAsset = {
-        organizationId,
         tenantId: tenant._id!,
         mediaType: MediaTypeEnum.FILE,
         originalFileName: file.originalname,
@@ -149,7 +144,6 @@ class MediaAssetService extends BaseService {
   }
 
   private async createVideoBulk(data: CreateFileData, files: Express.Multer.File[], session?: ClientSession): Promise<MediaAsset[]> {
-    const organizationId = getCurrentOrganizationId(this.context);
     const userId = getCurrentUserId(this.context);
     const { validatedData, tenant, parent } = await this.createFileValidation(data);
 
@@ -169,7 +163,6 @@ class MediaAssetService extends BaseService {
 
       const storageKey = this.fileUploaderGCSService.getStorageKey(file);
       const asset: MediaAsset = {
-        organizationId,
         tenantId: tenant._id!,
         mediaType: MediaTypeEnum.FILE,
         originalFileName: file.originalname,

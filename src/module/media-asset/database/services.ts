@@ -1,11 +1,10 @@
 import { ObjectId, Db, Collection, FindOptions, Filter, ClientSession } from "mongodb";
-import MongoHelper, { validateObjectId } from "../../../utils/helper.mongo";
+import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, NotFoundError } from "../../../utils/helper.errors";
 import { WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import ContentCollectionService from "../../content-collection/database/services";
 import { CreateFileData, MediaAsset, MediaTypeEnum } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Tenant } from "../../tenant/database/models";

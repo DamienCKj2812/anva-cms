@@ -5,6 +5,7 @@ import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { withDynamicFieldSettings } from "../../utils/helper.fieldSetting";
 import { AppContext } from "../../utils/helper.context";
+import { getCurrentUserId } from "../../utils/helper.auth";
 
 const contentCollectionController = (context: AppContext) => {
   const router = Router();
@@ -25,10 +26,8 @@ const contentCollectionController = (context: AppContext) => {
 
   router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { data, metadata } = await contentCollectionService.getAll({
-        ...req.body,
-      });
-      res.status(200).json(successResponse(data, metadata));
+      const contentCollections = await contentCollectionService.getAll();
+      res.status(200).json(successResponse(contentCollections));
     } catch (err) {
       next(err);
     }

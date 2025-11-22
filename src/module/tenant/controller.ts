@@ -2,7 +2,6 @@ import { Router, Request, Response, NextFunction } from "express";
 import { successResponse } from "../../utils/helper.response";
 import { ForbiddenError, NotFoundError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
-import { cleanupUploadedFiles } from "../../utils/helper";
 import { withDynamicFieldSettings } from "../../utils/helper.fieldSetting";
 import { AppContext } from "../../utils/helper.context";
 import { getCurrentUserId } from "../../utils/helper.auth";
@@ -20,7 +19,6 @@ const tenantController = (context: AppContext) => {
       const tenant = await tenantService.create(req.body);
       res.status(201).json(successResponse(tenant));
     } catch (err) {
-      await cleanupUploadedFiles(req);
       next(err);
     }
   });
@@ -62,7 +60,6 @@ const tenantController = (context: AppContext) => {
         const updatedTenant = await tenantService.update(req.params.id, req.body);
         res.status(200).json(successResponse(updatedTenant));
       } catch (err) {
-        await cleanupUploadedFiles(req);
         next(err);
       }
     }

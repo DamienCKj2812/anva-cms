@@ -7,12 +7,14 @@ import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
+import TenantLocaleService from "../../tenant-locale/database/services";
 
 class TenantService extends BaseService {
   private db: Db;
   private collection: Collection<Tenant>;
   public readonly collectionName = "tenants";
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateTenantData> = new Set(["name"] as const);
+  private tenantLocaleService: TenantLocaleService;
 
   constructor(context: AppContext) {
     super(context);
@@ -20,7 +22,9 @@ class TenantService extends BaseService {
     this.collection = this.db.collection<Tenant>(this.collectionName);
   }
 
-  async init() {}
+  async init() {
+    this.tenantLocaleService = this.getService("TenantLocaleService");
+  }
 
   private async createValidation(data: CreateTenantData): Promise<CreateTenantData> {
     const { name } = data;
@@ -56,6 +60,10 @@ class TenantService extends BaseService {
     };
 
     const result = await this.collection.insertOne(newTenant);
+    await this.tenantLocaleService.create({
+      data: { tenantId: result.insertedId.toString(), displayName: "en", locale: "en" },
+      isDefault: true,
+    });
     return { _id: result.insertedId, ...newTenant };
   }
 

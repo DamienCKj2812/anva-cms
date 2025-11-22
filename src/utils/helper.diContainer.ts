@@ -3,6 +3,7 @@ import AuthService from "../module/auth/database/services";
 import ContentCollectionService from "../module/content-collection/database/services";
 import ContentService from "../module/content/database/services";
 import MediaAssetService from "../module/media-asset/database/services";
+import TenantLocaleService from "../module/tenant-locale/database/services";
 import TenantService from "../module/tenant/database/services";
 import UserService from "../module/user/database/services";
 import { AppContext } from "./helper.context";
@@ -12,6 +13,7 @@ export type ServiceMap = {
   UserService: UserService;
   AuthService: AuthService;
   TenantService: TenantService;
+  TenantLocaleService: TenantLocaleService;
   ContentCollectionService: ContentCollectionService;
   AttributeService: AttributeService;
   ContentService: ContentService;
@@ -41,6 +43,7 @@ export async function createDIContainer(context: AppContext) {
   const authService = new AuthService(context);
   const userService = new UserService(context);
   const tenantService = new TenantService(context);
+  const tenantLocaleService = new TenantLocaleService(context);
   const contentCollectionService = new ContentCollectionService(context);
   const attributeService = new AttributeService(context);
   const contentService = new ContentService(context);
@@ -51,6 +54,7 @@ export async function createDIContainer(context: AppContext) {
   container.register("AuthService", authService);
   container.register("UserService", userService);
   container.register("TenantService", tenantService);
+  container.register("TenantLocaleService", tenantLocaleService);
   container.register("ContentCollectionService", contentCollectionService);
   container.register("AttributeService", attributeService);
   container.register("ContentService", contentService);
@@ -61,6 +65,7 @@ export async function createDIContainer(context: AppContext) {
   authService.init();
   userService.init();
   tenantService.init();
+  tenantLocaleService.init();
   contentCollectionService.init();
   attributeService.init();
   contentService.init();

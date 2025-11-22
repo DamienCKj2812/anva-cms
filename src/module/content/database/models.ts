@@ -15,6 +15,11 @@ export interface Content {
   updatedAt: Date | null;
 }
 
+export interface ContentCount {
+  _id: ObjectId;
+  count: number;
+}
+
 export interface CreateContentData {
   contentCollectionId: string;
   data: string;

@@ -1,4 +1,4 @@
-import { ObjectId, Db, Collection, FindOptions } from "mongodb";
+import { ObjectId, Db, Collection, FindOptions, Filter } from "mongodb";
 import { getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { NotFoundError, ValidationError } from "../../../utils/helper.errors";
@@ -57,12 +57,23 @@ class AttributeService extends BaseService {
         if (pattern !== undefined && typeof pattern !== "string") {
           throw new ValidationError("validation.pattern must be a string (regex)");
         }
+        const hasLengthRules = minLength !== undefined || maxLength !== undefined;
+        const hasPattern = pattern !== undefined && pattern.trim() !== "";
+        if (hasLengthRules && hasPattern) {
+          throw new ValidationError("You cannot provide both (minLength / maxLength) and pattern. Choose one validation strategy.");
+        }
         if (minimum !== undefined || maximum !== undefined) {
           throw new ValidationError("minimum/maximum cannot be used for type=string");
         }
         if (format !== undefined && !Object.values(FormatTypeEnum).includes(format)) {
           throw new ValidationError(`Format must be one of: ${Object.values(FormatTypeEnum).join(", ")}`);
         }
+        if (minLength !== undefined && maxLength !== undefined) {
+          if (minLength > maxLength) {
+            throw new ValidationError("minLength cannot be greater than maxLength");
+          }
+        }
+
         break;
 
       case AttributeTypeEnum.NUMBER:
@@ -78,6 +89,12 @@ class AttributeService extends BaseService {
         if (format !== undefined) {
           throw new ValidationError("format cannot be set for type=number");
         }
+        if (minimum !== undefined && maximum !== undefined) {
+          if (minimum > maximum) {
+            throw new ValidationError("minimum cannot be greater than maximum");
+          }
+        }
+
         break;
 
       case AttributeTypeEnum.BOOLEAN:
@@ -228,15 +245,20 @@ class AttributeService extends BaseService {
     return await this.collection.findOne(filter, options);
   }
 
+  async findMany(filter: Filter<Attribute>, options?: FindOptions<Attribute>): Promise<Attribute[]> {
+    return this.collection.find(filter, options).toArray();
+  }
+
   private async updateValidation(attribute: Attribute, data: UpdateAttributeData): Promise<UpdateAttributeData> {
-    const { label, required, format, defaultValue, enumValues, validation } = data;
+    const { label, required, format, defaultValue, enumValues, validation, isTranslatable } = data;
     if (
       !("label" in data) &&
       !("required" in data) &&
       !("format" in data) &&
       !("defaultValue" in data) &&
       !("enumValues" in data) &&
-      !("validation" in data)
+      !("validation" in data) &&
+      !("isTranslatable" in data)
     ) {
       throw new NotFoundError("No valid fields provided for update");
     }
@@ -306,6 +328,9 @@ class AttributeService extends BaseService {
 
       if (validation !== undefined) {
         await this.validateAttributeValidation(attribute.type, validation, format);
+      }
+      if (typeof isTranslatable === "boolean") {
+        throw new Error("isTranslatable must be a boolean");
       }
     }
     return data;

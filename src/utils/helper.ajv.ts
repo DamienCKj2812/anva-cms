@@ -3,7 +3,7 @@ import addFormats from "ajv-formats";
 
 const ajv = new Ajv({ allErrors: true, strict: false });
 
-// Register standard formats: email, uri, date-time, date, time, etc.
+// Register standard formats: uri, date-time, date, time, etc.
 addFormats(ajv);
 
 ajv.addFormat("image-uri", {

@@ -5,7 +5,7 @@ import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import { Content, ContentStatusEnum, CreateContentData, UpdateContentData } from "./models";
+import { Content, ContentCount, ContentStatusEnum, CreateContentData, UpdateContentData } from "./models";
 import ContentCollectionService from "../../content-collection/database/services";
 import ajv from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
@@ -88,6 +88,14 @@ class ContentService extends BaseService {
   async getById(id: string): Promise<Content | null> {
     validateObjectId(id);
     return await this.collection.findOne({ _id: new ObjectId(id) });
+  }
+
+  async getContentCount(createdBy: ObjectId): Promise<ContentCount[]> {
+    const counts = await this.collection
+      .aggregate([{ $match: { createdBy } }, { $group: { _id: "$contentCollectionId", count: { $sum: 1 } } }])
+      .toArray();
+
+    return counts as ContentCount[];
   }
 
   async findOne(filter: Partial<Content>, options?: FindOptions<Content>): Promise<Content | null> {

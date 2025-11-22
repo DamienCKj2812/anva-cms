@@ -1,15 +1,15 @@
-import { ObjectId, Db, Collection, FindOptions } from "mongodb";
+import { ObjectId, Db, Collection, FindOptions, Filter, Document } from "mongodb";
 import { getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
-import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { ContentCollection, CreateContentCollectionData, DeleteContentCollectionResponse, UpdateContentCollectionData } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Attribute, UpdateAttributeData } from "../../attribute/database/models";
 import { BaseService } from "../../core/base-service";
 import AttributeService from "../../attribute/database/services";
+import ContentService from "../../content/database/services";
 
 class ContentCollectionService extends BaseService {
   private db: Db;
@@ -18,6 +18,7 @@ class ContentCollectionService extends BaseService {
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentCollectionData> = new Set(["name", "displayName"] as const);
   private tenantService: TenantService;
   private attributeService: AttributeService;
+  private contentService: ContentService;
 
   constructor(context: AppContext) {
     super(context);
@@ -28,10 +29,12 @@ class ContentCollectionService extends BaseService {
   async init() {
     this.tenantService = this.getService("TenantService");
     this.attributeService = this.getService("AttributeService");
+    this.contentService = this.getService("ContentService");
   }
 
   private async createValidation(data: CreateContentCollectionData): Promise<CreateContentCollectionData> {
     const { tenantId, name, displayName } = data;
+    const userId = getCurrentUserId(this.context);
     if (!("tenantId" in data)) {
       throw new ValidationError('"tenantId" field is required');
     }
@@ -41,30 +44,40 @@ class ContentCollectionService extends BaseService {
     if (!("displayName" in data)) {
       throw new ValidationError('"displayName" field is required');
     }
+    validateObjectId(tenantId);
+    const tenant = await this.tenantService.getById(tenantId);
+    if (!tenant) {
+      throw new NotFoundError("Tenant not found");
+    }
+    if (!tenant.createdBy.equals(userId)) {
+      throw new ForbiddenError("You are not allowed to access this resources");
+    }
     if (typeof name !== "string" || !name.trim()) {
       throw new ValidationError("name must be a non-empty string");
     }
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(name)) {
       throw new ValidationError("Name can only contain letters, numbers, and single hyphens (no spaces)");
     }
+    const existingCollection = await this.collection.findOne({
+      name: name.trim(),
+      createdBy: userId,
+    });
+    if (existingCollection) {
+      throw new ConflictError("Content collection already exists");
+    }
     if (typeof displayName !== "string" || !displayName.trim()) {
       throw new ValidationError("displayName must be a non-empty string");
-    }
-    validateObjectId(tenantId);
-    const tenant = await this.tenantService.getById(tenantId.toString());
-    if (!tenant) {
-      throw new NotFoundError("Tenant not found");
     }
     return data;
   }
 
-  async create(data: ContentCollection): Promise<ContentCollection> {
+  async create(data: CreateContentCollectionData): Promise<ContentCollection> {
     const { tenantId, name, displayName } = await this.createValidation(data);
     const createdBy = getCurrentUserId(this.context);
 
     console.log("Creating :", name);
     const newContentCollection: ContentCollection = {
-      tenantId,
+      tenantId: new ObjectId(tenantId),
       name: name.trim(),
       displayName: displayName.trim(),
       schema: null,
@@ -76,14 +89,22 @@ class ContentCollectionService extends BaseService {
     return { _id: result.insertedId, ...newContentCollection };
   }
 
-  async getAll(queryOptions: QueryOptions): Promise<WithMetaData<ContentCollection>> {
-    const options = {
-      ...queryOptions,
-      filter: {
-        ...(queryOptions.filter || {}),
-      },
-    };
-    return await findWithOptions(this.collection, options);
+  async getAll(): Promise<(ContentCollection & { contentCount: number })[]> {
+    const userId = getCurrentUserId(this.context);
+
+    const [contentCollections, contentCounts] = await Promise.all([
+      this.findMany({ createdBy: userId }),
+      this.contentService.getContentCount(userId),
+    ]);
+
+    const countMap = new Map<string, number>(contentCounts.map((c) => [c._id.toString(), c.count]));
+
+    const merged = contentCollections.map((c) => ({
+      ...c,
+      contentCount: countMap.get(c._id!.toString()) ?? 0,
+    }));
+
+    return merged;
   }
 
   async getById(id: string): Promise<ContentCollection | null> {
@@ -95,9 +116,14 @@ class ContentCollectionService extends BaseService {
     return await this.collection.findOne(filter, options);
   }
 
+  async findMany(filter: Filter<ContentCollection>, options?: FindOptions<ContentCollection>): Promise<ContentCollection[]> {
+    return this.collection.find(filter, options).toArray();
+  }
+
   private async updateValidation(contentCollection: ContentCollection, data: UpdateContentCollectionData): Promise<UpdateContentCollectionData> {
     const { name, displayName } = data;
     let updateData: UpdateContentCollectionData = { ...data };
+    let userId = getCurrentUserId(this.context);
 
     if (!("name" in data) && !("displayName" in data)) {
       throw new BadRequestError("No valid fields provided for update");
@@ -110,11 +136,12 @@ class ContentCollectionService extends BaseService {
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(name)) {
         throw new ValidationError("Name can only contain letters, numbers, and single hyphens (no spaces)");
       }
-      const existingContentCollection = await this.collection.findOne({
+      const existingCollection = await this.collection.findOne({
         name: name.trim(),
+        createdBy: userId,
       });
-      if (existingContentCollection) {
-        throw new ConflictError("name already exists");
+      if (existingCollection) {
+        throw new ConflictError("Content collection already exists");
       }
       updateData.name = name.trim();
     }
@@ -131,8 +158,12 @@ class ContentCollectionService extends BaseService {
   async update(id: string, data: UpdateContentCollectionData): Promise<ContentCollection> {
     validateObjectId(id);
     const contentCollection = await this.getById(id);
+    const userId = getCurrentUserId(this.context);
     if (!contentCollection) {
       throw new NotFoundError("ContentCollection not found");
+    }
+    if (!contentCollection.createdBy.equals(userId)) {
+      throw new ForbiddenError("You cannot access to this resources");
     }
     const filteredUpdateData = filterFields(data, ContentCollectionService.ALLOWED_UPDATE_FIELDS);
     const validatedData = await this.updateValidation(contentCollection, filteredUpdateData);
@@ -178,8 +209,12 @@ class ContentCollectionService extends BaseService {
 
   private async deleteValidation(id: string): Promise<{ contentCollection: ContentCollection; nonDeletedAttributes: WithMetaData<Attribute> }> {
     const contentCollection = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { name: 1 } });
+    const userId = getCurrentUserId(this.context);
     if (!contentCollection) {
       throw new NotFoundError("content collection not found");
+    }
+    if (!contentCollection.createdBy.equals(userId)) {
+      throw new ForbiddenError("You are not allowed to access this resources");
     }
     const attributes = await this.attributeService.getAll({
       filter: { contentCollectionId: new ObjectId(id) },

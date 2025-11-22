@@ -21,4 +21,8 @@ export interface DeleteContentCollectionResponse {
   data: any;
 }
 
-export type CreateContentCollectionData = Omit<ContentCollection, "_id" | "createdAt" | "updatedAt" | "createdBy">;
+export interface CreateContentCollectionData {
+  tenantId: string;
+  name: string;
+  displayName: string;
+}

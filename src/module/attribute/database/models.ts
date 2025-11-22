@@ -12,7 +12,6 @@ export enum FormatTypeEnum {
   DATE_TIME = "date-time",
   DATE = "date",
   TIME = "time",
-  EMAIL = "email",
   URI = "uri",
   IMAGE_URI = "image-uri", // custom format
 }
@@ -49,6 +48,7 @@ export interface UpdateAttributeData {
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
+  isTranslatable?: boolean;
 }
 
 export type CreateAttributeData = {

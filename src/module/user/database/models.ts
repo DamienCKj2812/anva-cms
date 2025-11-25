@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
 
 export interface User {
-  _id?: ObjectId;
+  _id: ObjectId;
   username: string;
   password: string; // Optional for update operations
   orgBucketName: string | null;

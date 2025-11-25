@@ -53,7 +53,7 @@ export async function createDIContainer(context: AppContext) {
   // Register all services
   container.register("AuthService", authService);
   container.register("UserService", userService);
-  container.register("TenantService", tenantService);
+  container.register("TenantService", tenantService); // register this first before the user service
   container.register("TenantLocaleService", tenantLocaleService);
   container.register("ContentCollectionService", contentCollectionService);
   container.register("AttributeService", attributeService);

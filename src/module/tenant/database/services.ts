@@ -27,8 +27,7 @@ class TenantService extends BaseService {
   }
 
   private async createValidation(data: CreateTenantData): Promise<CreateTenantData> {
-    const { name } = data;
-    const createdBy = getCurrentUserId(this.context);
+    const { name, createdBy } = data;
 
     if (!("name" in data)) {
       throw new ValidationError('"name" field is required');
@@ -48,9 +47,8 @@ class TenantService extends BaseService {
     };
   }
 
-  async create(data: Tenant): Promise<Tenant> {
-    const { name } = await this.createValidation(data);
-    const createdBy = getCurrentUserId(this.context);
+  async create(data: CreateTenantData): Promise<Tenant> {
+    const { name, createdBy } = await this.createValidation(data);
 
     console.log("Creating tenant:", name);
     const newTenant: Tenant = {
@@ -61,7 +59,7 @@ class TenantService extends BaseService {
 
     const result = await this.collection.insertOne(newTenant);
     await this.tenantLocaleService.create({
-      data: { tenantId: result.insertedId.toString(), displayName: "en", locale: "en" },
+      data: { tenantId: result.insertedId.toString(), displayName: "en", locale: "en", createdBy: data.createdBy },
       isDefault: true,
     });
     return { _id: result.insertedId, ...newTenant };

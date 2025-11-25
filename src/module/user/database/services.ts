@@ -8,12 +8,14 @@ import configs from "../../../configs";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
+import TenantService from "../../tenant/database/services";
 
 class UserService extends BaseService {
   private db: Db;
   private collection: Collection<User>;
   public readonly collectionName = "users";
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateUserData> = new Set(["username", "password"] as const);
+  private tenantService: TenantService;
 
   constructor(context: AppContext) {
     super(context);
@@ -22,21 +24,35 @@ class UserService extends BaseService {
   }
 
   async init() {
-    // Check before insert
+    this.tenantService = this.getService("TenantService")
     const existingAdmin = await this.collection.findOne({
       username: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
     });
 
     if (!existingAdmin) {
-      await this.collection.insertOne({
+      const adminUser: User = {
+        _id: new ObjectId(),
         username: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
         password: await hashPassword(configs.DEFAULT_DEVELOPER_ACCOUNT_PASSWORD),
         orgBucketName: "",
         createdAt: new Date(),
         updatedAt: null,
-      });
+      };
+
+      await this.collection.insertOne(adminUser);
+
+      try {
+        await this.tenantService.create({
+          name: "default-tenant",
+          createdBy: adminUser._id,
+        },);
+      } catch (err) {
+        console.error("Failed to create tenant for admin, rolling back:", err);
+        await this.collection.deleteOne({ _id: adminUser._id });
+        throw new Error("Tenant creation failed, admin user rolled back");
+      }
     }
-    await this.collection.createIndex({ username: 1 }, { unique: true });
+    await this.collection.createIndex({ username: 1 });
   }
 
   private async createValidation(data: CreateUserData): Promise<CreateUserData> {
@@ -71,6 +87,7 @@ class UserService extends BaseService {
 
     console.log("Creating user:", username);
     const newUser: User = {
+      _id: new ObjectId(),
       username: username.trim(),
       orgBucketName: "",
       createdAt: new Date(),
@@ -78,8 +95,20 @@ class UserService extends BaseService {
       password: await hashPassword(password),
     };
 
-    const result = await this.collection.insertOne(newUser);
-    return { _id: result.insertedId, ...newUser };
+    await this.collection.insertOne(newUser);
+
+    try {
+      await this.tenantService.create({
+        name: "default-tenant",
+        createdBy: newUser._id,
+      });
+    } catch (err) {
+      console.error("Failed to create tenant, rolling back user creation:", err);
+      await this.collection.deleteOne({ _id: newUser._id });
+      throw new Error("Tenant creation failed, user rolled back");
+    }
+
+    return newUser;
   }
 
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<User>> {

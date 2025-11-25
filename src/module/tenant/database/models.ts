@@ -12,4 +12,7 @@ export interface UpdateTenantData {
   name?: string;
 }
 
-export type CreateTenantData = Omit<Tenant, "_id" | "createdAt" | "updatedAt">;
+export type CreateTenantData = {
+  name: string;
+  createdBy: ObjectId;
+}

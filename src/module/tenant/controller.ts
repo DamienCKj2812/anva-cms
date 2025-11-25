@@ -15,8 +15,7 @@ const tenantController = (context: AppContext) => {
 
   router.post("/create", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      console.log("Creating tenant with data:", req.body);
-      const tenant = await tenantService.create(req.body);
+      const tenant = await tenantService.create({ ...req.body, createdBy: getCurrentUserId(context) });
       res.status(201).json(successResponse(tenant));
     } catch (err) {
       next(err);

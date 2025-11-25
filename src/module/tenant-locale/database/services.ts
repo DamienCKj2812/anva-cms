@@ -27,8 +27,7 @@ class TenantLocaleService extends BaseService {
   }
 
   private async createValidation(data: CreateTenantLocaleData): Promise<CreateTenantLocaleData> {
-    const { tenantId, locale, displayName } = data;
-    const createdBy = getCurrentUserId(this.context);
+    const { tenantId, locale, displayName, createdBy } = data;
 
     if (!("tenantId" in data)) {
       throw new ValidationError('"tenantId" field is required');
@@ -62,8 +61,7 @@ class TenantLocaleService extends BaseService {
   }
 
   async create({ data, isDefault = false }: { data: CreateTenantLocaleData; isDefault?: boolean }): Promise<TenantLocale> {
-    const { tenantId, locale, displayName } = await this.createValidation(data);
-    const createdBy = getCurrentUserId(this.context);
+    const { tenantId, locale, displayName, createdBy } = await this.createValidation(data);
 
     console.log("Creating tenantLocale:", displayName);
     const newTenantLocale: TenantLocale = {

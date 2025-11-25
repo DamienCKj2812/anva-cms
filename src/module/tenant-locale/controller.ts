@@ -15,7 +15,7 @@ const tenantLocaleController = (context: AppContext) => {
 
   router.post("/create", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const tenantLocale = await tenantLocaleService.create({ data: req.body });
+      const tenantLocale = await tenantLocaleService.create({ data: { ...req.body, createdBy: getCurrentUserId(context) } });
       res.json(successResponse(tenantLocale));
     } catch (err) {
       await cleanupUploadedFiles(req);

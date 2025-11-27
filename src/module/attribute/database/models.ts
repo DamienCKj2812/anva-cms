@@ -13,7 +13,7 @@ export enum FormatTypeEnum {
   DATE = "date",
   TIME = "time",
   URI = "uri",
-  IMAGE_URI = "image-uri", // custom format
+  MEDIA_URI = "media-uri", // custom format
 }
 
 export interface ValidationRules {

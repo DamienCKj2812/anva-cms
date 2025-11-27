@@ -17,7 +17,6 @@ class MediaAssetService extends BaseService {
   private collection: Collection<MediaAsset>;
   public readonly collectionName = "media-asset";
   private tenantService: TenantService;
-  private fileUploaderGCSService: FileUploaderGCSService;
 
   constructor(context: AppContext) {
     super(context);
@@ -27,14 +26,13 @@ class MediaAssetService extends BaseService {
 
   async init() {
     this.tenantService = this.getService("TenantService");
-    this.fileUploaderGCSService = this.getService("FileUploaderGCSService");
     await this.collection.createIndex({ tenantId: 1, parentId: 1, name: 1 });
   }
 
-  async createImages(data: CreateFileData, files: Express.Multer.File[]): Promise<MediaAsset[]> {
+  async createImages(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset[]> {
     if (!files || files.length === 0) throw new BadRequestError("No files provided");
-    const uploads = await Promise.all(files.map((f) => this.fileUploaderGCSService.uploadImageToGCS(f)));
-    const assets = await this.createImageBulk(data, files);
+    const uploads = await Promise.all(files.map((f) => fileUploaderGCSService.uploadImageToGCS(f)));
+    const assets = await this.createImageBulk(data, files, fileUploaderGCSService);
     // Update URLs after bulk insert
     await this.collection.bulkWrite(
       assets.map((asset, i) => ({
@@ -74,7 +72,7 @@ class MediaAssetService extends BaseService {
     };
   }
 
-  private async createImageBulk(data: CreateFileData, files: Express.Multer.File[], session?: ClientSession): Promise<MediaAsset[]> {
+  private async createImageBulk(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService, session?: ClientSession): Promise<MediaAsset[]> {
     const userId = getCurrentUserId(this.context);
     const { validatedData, tenant, parent } = await this.createFileValidation(data);
 
@@ -92,7 +90,7 @@ class MediaAssetService extends BaseService {
         throw new BadRequestError(`Invalid file type: ${file.originalname} is not an image`);
       }
 
-      const storageKey = this.fileUploaderGCSService.getStorageKey(file);
+      const storageKey = fileUploaderGCSService.getStorageKey(file);
       const asset: MediaAsset = {
         tenantId: tenant._id!,
         mediaType: MediaTypeEnum.FILE,
@@ -121,11 +119,11 @@ class MediaAssetService extends BaseService {
     return assets;
   }
 
-  async createVideos(data: CreateFileData, files: Express.Multer.File[]): Promise<MediaAsset[]> {
+  async createVideos(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset[]> {
     if (!files || files.length === 0) throw new BadRequestError("No files provided");
 
-    const uploads = await Promise.all(files.map((f) => this.fileUploaderGCSService.uploadVideoToGCS(f)));
-    const assets = await this.createVideoBulk(data, files);
+    const uploads = await Promise.all(files.map((f) => fileUploaderGCSService.uploadVideoToGCS(f)));
+    const assets = await this.createVideoBulk(data, files, fileUploaderGCSService);
     // Update URLs after bulk insert
     await this.collection.bulkWrite(
       assets.map((asset, i) => ({
@@ -142,7 +140,7 @@ class MediaAssetService extends BaseService {
     return assets;
   }
 
-  private async createVideoBulk(data: CreateFileData, files: Express.Multer.File[], session?: ClientSession): Promise<MediaAsset[]> {
+  private async createVideoBulk(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService, session?: ClientSession): Promise<MediaAsset[]> {
     const userId = getCurrentUserId(this.context);
     const { validatedData, tenant, parent } = await this.createFileValidation(data);
 
@@ -160,7 +158,7 @@ class MediaAssetService extends BaseService {
         throw new BadRequestError(`Invalid file type: ${file.originalname} is not an video`);
       }
 
-      const storageKey = this.fileUploaderGCSService.getStorageKey(file);
+      const storageKey = fileUploaderGCSService.getStorageKey(file);
       const asset: MediaAsset = {
         tenantId: tenant._id!,
         mediaType: MediaTypeEnum.FILE,

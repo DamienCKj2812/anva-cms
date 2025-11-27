@@ -6,9 +6,18 @@ const ajv = new Ajv({ allErrors: true, strict: false });
 // Register standard formats: uri, date-time, date, time, etc.
 addFormats(ajv);
 
-ajv.addFormat("image-uri", {
+ajv.addFormat("media-uri", {
   type: "string",
-  validate: (uri: string) => /^https?:\/\/.*\.(?:png|jpg|jpeg|gif|webp)$/i.test(uri),
+  validate: (value: string) => {
+    return (
+      typeof value === "string" &&
+      (
+        value.startsWith("/uploads/") ||
+        value.startsWith("http://") ||
+        value.startsWith("https://")
+      )
+    );
+  }
 });
 
 export default ajv;

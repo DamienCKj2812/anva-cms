@@ -7,7 +7,6 @@ import TenantLocaleService from "../module/tenant-locale/database/services";
 import TenantService from "../module/tenant/database/services";
 import UserService from "../module/user/database/services";
 import { AppContext } from "./helper.context";
-import FileUploaderGCSService from "./helper.fileUploadGCSService";
 
 export type ServiceMap = {
   UserService: UserService;
@@ -17,7 +16,6 @@ export type ServiceMap = {
   ContentCollectionService: ContentCollectionService;
   AttributeService: AttributeService;
   ContentService: ContentService;
-  FileUploaderGCSService: FileUploaderGCSService;
   MediaAssetService: MediaAssetService;
 };
 
@@ -47,7 +45,6 @@ export async function createDIContainer(context: AppContext) {
   const contentCollectionService = new ContentCollectionService(context);
   const attributeService = new AttributeService(context);
   const contentService = new ContentService(context);
-  const fileUploaderGCSService = new FileUploaderGCSService(context);
   const mediaAssetService = new MediaAssetService(context);
 
   // Register all services
@@ -58,7 +55,6 @@ export async function createDIContainer(context: AppContext) {
   container.register("ContentCollectionService", contentCollectionService);
   container.register("AttributeService", attributeService);
   container.register("ContentService", contentService);
-  container.register("FileUploaderGCSService", fileUploaderGCSService);
   container.register("MediaAssetService", mediaAssetService);
 
   // Call init for each service
@@ -69,6 +65,5 @@ export async function createDIContainer(context: AppContext) {
   contentCollectionService.init();
   attributeService.init();
   contentService.init();
-  fileUploaderGCSService.init();
   mediaAssetService.init();
 }

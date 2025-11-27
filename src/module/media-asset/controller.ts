@@ -1,46 +1,73 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { successResponse } from "../../utils/helper.response";
 import { authenticate } from "../../middleware/auth";
-import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
 import { BadRequestError } from "../../utils/helper.errors";
+import { getCurrentUserId } from "../../utils/helper.auth";
+import FileUploaderGCSService from "../../utils/helper.fileUploadGCSService";
 
 const mediaAssetController = (context: AppContext) => {
   const router = Router();
   const mediaAssetService = context.diContainer!.get("MediaAssetService");
-  const fileUploaderGCSService = context.diContainer!.get("FileUploaderGCSService");
 
   router.use(authenticate(context));
 
-  router.post("/upload-images", fileUploaderGCSService.getArrayMiddleware(), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const files = req.files as Express.Multer.File[];
-      if (!files || files.length === 0) {
-        throw new BadRequestError("No files uploaded");
-      }
-
-      const contents = await mediaAssetService.createImages(req.body, files);
+      const userId = getCurrentUserId(context)
+      const contents = await mediaAssetService.findMany({ _id: userId });
 
       res.status(201).json(successResponse(contents));
     } catch (err) {
-      await cleanupUploadedFiles(req);
       next(err);
     }
   });
 
-  router.post("/upload-videos", fileUploaderGCSService.getArrayMiddleware(), async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:tenantId/:googleProjectId/upload-images", async (req, res, next) => {
     try {
-      const files = req.files as Express.Multer.File[];
-      if (!files || files.length === 0) {
-        throw new BadRequestError("No files uploaded");
-      }
+      const gcsService = new FileUploaderGCSService(context).getInstance({
+        projectId: req.params.googleProjectId
+      });
+      gcsService.getArrayMiddleware("files")(req, res, async (err) => {
+        if (err) return next(err);
+        try {
+          const files = req.files as Express.Multer.File[];
 
-      const contents = await mediaAssetService.createVideos(req.body, files);
+          if (!files || files.length === 0) {
+            throw new BadRequestError("No files uploaded");
+          }
+          const contents = await mediaAssetService.createImages({ tenantId: req.params.tenantId, parentId: req.body.parentId }, files, gcsService);
+          res.status(201).json(successResponse(contents));
+        } catch (err) {
+          next(err);
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
 
-      res.status(201).json(successResponse(contents));
-    } catch (err) {
-      await cleanupUploadedFiles(req);
-      next(err);
+  router.post("/:googleProjectId/upload-videos", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const gcsService = new FileUploaderGCSService(context).getInstance({
+        projectId: req.params.googleProjectId
+      });
+      gcsService.getArrayMiddleware()(req, res, async (err) => {
+        if (err) return next(err);
+        try {
+          const files = req.files as Express.Multer.File[];
+
+          if (!files || files.length === 0) {
+            throw new BadRequestError("No files uploaded");
+          }
+          const contents = await mediaAssetService.createVideos({ tenantId: req.params.tenantId, parentId: req.body.parentId }, files, gcsService);
+          res.status(201).json(successResponse(contents));
+        } catch (err) {
+          next(err);
+        }
+      });
+    } catch (error) {
+      next(error);
     }
   });
 

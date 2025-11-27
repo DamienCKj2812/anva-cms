@@ -23,17 +23,18 @@ class FileUploaderGCSService extends BaseService {
     super(context);
   }
 
-  async init() {
+  getInstance({ projectId, allowedMimeTypes, maxFileSize, maxFiles }: { projectId: string, allowedMimeTypes?: string[], maxFileSize?: number, maxFiles?: number }): FileUploaderGCSService {
     this.config = {
-      allowedMimeTypes: configs.GCLOUD_CONFIGS.ALLOWED_MIME_TYPES,
-      maxFileSize: configs.GCLOUD_CONFIGS.MAX_FILE_SIZE,
-      maxFiles: configs.GCLOUD_CONFIGS.MAX_FILES,
+      allowedMimeTypes: allowedMimeTypes || configs.GCLOUD_CONFIGS.ALLOWED_MIME_TYPES,
+      maxFileSize: maxFileSize || configs.GCLOUD_CONFIGS.MAX_FILE_SIZE,
+      maxFiles: maxFiles || configs.GCLOUD_CONFIGS.MAX_FILES,
     };
     this.storage = new Storage({
-      projectId: configs.GCLOUD_CONFIGS.GCLOUD_PROJECT_ID,
+      projectId: projectId,
       keyFilename: path.join(__dirname, "../../gcloud-service-account.json"),
     });
     this.upload = this.configureMulter();
+    return this
   }
 
   // Configure multer (memory storage)
@@ -51,8 +52,8 @@ class FileUploaderGCSService extends BaseService {
         const maxSize = file.mimetype.startsWith("image/")
           ? 10 * 1024 * 1024 // 10 MB
           : file.mimetype.startsWith("video/")
-          ? 500 * 1024 * 1024 // 500 MB
-          : 0;
+            ? 500 * 1024 * 1024 // 500 MB
+            : 0;
 
         if (file.size > maxSize) {
           return cb(new Error(`File too large. Max allowed size for this type is ${maxSize / 1024 / 1024}MB`));

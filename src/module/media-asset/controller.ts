@@ -5,6 +5,7 @@ import { AppContext } from "../../utils/helper.context";
 import { BadRequestError } from "../../utils/helper.errors";
 import { getCurrentUserId } from "../../utils/helper.auth";
 import FileUploaderGCSService from "../../utils/helper.fileUploadGCSService";
+import { ObjectId } from "mongodb";
 
 const mediaAssetController = (context: AppContext) => {
   const router = Router();
@@ -14,14 +15,21 @@ const mediaAssetController = (context: AppContext) => {
 
   router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = getCurrentUserId(context)
-      const contents = await mediaAssetService.findMany({ _id: userId });
-
-      res.status(201).json(successResponse(contents));
+      const userId = getCurrentUserId(context);
+      const { tenantId } = req.query as { tenantId?: string };
+      const filter: any = {
+        createdBy: userId,
+      };
+      if (tenantId) {
+        filter.tenantId = tenantId;
+      }
+      const contents = await mediaAssetService.findMany(filter);
+      res.status(200).json(successResponse(contents));
     } catch (err) {
       next(err);
     }
   });
+
 
   router.post("/:tenantId/:googleProjectId/upload-images", async (req, res, next) => {
     try {

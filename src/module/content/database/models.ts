@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import { CreateContentTranslationData } from "../../content-translation/database/models";
 
 export enum ContentStatusEnum {
   DRAFT = "draft",
@@ -7,12 +8,12 @@ export enum ContentStatusEnum {
 }
 
 export interface Content {
-  _id?: ObjectId;
+  _id: ObjectId;
   contentCollectionId: ObjectId;
-  data: any;
   status: ContentStatusEnum;
   createdAt: Date;
   updatedAt: Date | null;
+  createdBy: ObjectId
 }
 
 export interface ContentCount {
@@ -22,11 +23,10 @@ export interface ContentCount {
 
 export interface CreateContentData {
   contentCollectionId: string;
-  data: string;
   status: string;
+  contentTranslationDto: CreateContentTranslationData;
 }
 
 export interface UpdateContentData {
-  data?: string;
   status?: string;
 }

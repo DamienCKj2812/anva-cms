@@ -26,10 +26,15 @@ const tenantLocaleController = (context: AppContext) => {
   router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = getCurrentUserId(context);
-      const tenantLocales = await tenantLocaleService.findMany({
-        createdBy: userId,
-      });
-      res.json(successResponse(tenantLocales));
+      const { tenantId } = req.query as { tenantId?: string };
+      const filter: any = {
+        createdBy: new ObjectId(userId),
+      };
+      if (tenantId) {
+        filter.tenantId = new ObjectId(tenantId);
+      }
+      const contents = await tenantLocaleService.findMany(filter);
+      res.status(200).json(successResponse(contents));
     } catch (err) {
       next(err);
     }

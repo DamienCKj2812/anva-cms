@@ -23,14 +23,13 @@ class FileUploaderGCSService extends BaseService {
     super(context);
   }
 
-  getInstance({ projectId, allowedMimeTypes, maxFileSize, maxFiles }: { projectId: string, allowedMimeTypes?: string[], maxFileSize?: number, maxFiles?: number }): FileUploaderGCSService {
+  getInstance({ allowedMimeTypes, maxFileSize, maxFiles }: { allowedMimeTypes?: string[], maxFileSize?: number, maxFiles?: number }): FileUploaderGCSService {
     this.config = {
       allowedMimeTypes: allowedMimeTypes || configs.GCLOUD_CONFIGS.ALLOWED_MIME_TYPES,
       maxFileSize: maxFileSize || configs.GCLOUD_CONFIGS.MAX_FILE_SIZE,
       maxFiles: maxFiles || configs.GCLOUD_CONFIGS.MAX_FILES,
     };
     this.storage = new Storage({
-      projectId: projectId,
       keyFilename: path.join(__dirname, "../../gcloud-service-account.json"),
     });
     this.upload = this.configureMulter();

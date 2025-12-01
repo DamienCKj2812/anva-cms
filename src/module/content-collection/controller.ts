@@ -5,7 +5,6 @@ import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { withDynamicFieldSettings } from "../../utils/helper.fieldSetting";
 import { AppContext } from "../../utils/helper.context";
-import { getCurrentUserId } from "../../utils/helper.auth";
 
 const contentCollectionController = (context: AppContext) => {
   const router = Router();

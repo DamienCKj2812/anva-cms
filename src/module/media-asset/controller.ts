@@ -16,13 +16,16 @@ const mediaAssetController = (context: AppContext) => {
   router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = getCurrentUserId(context);
-      const { tenantId } = req.query as { tenantId?: string };
+      const { tenantId, parentId } = req.query as { tenantId?: string; parentId?: string };
       const filter: any = {
-        createdBy: userId,
+        createdBy: new ObjectId(userId),
       };
       if (tenantId) {
-        filter.tenantId = tenantId;
+        filter.tenantId = new ObjectId(tenantId);
       }
+      filter.parentId = parentId
+        ? new ObjectId(parentId)
+        : null;
       const contents = await mediaAssetService.findMany(filter);
       res.status(200).json(successResponse(contents));
     } catch (err) {
@@ -33,9 +36,7 @@ const mediaAssetController = (context: AppContext) => {
 
   router.post("/:tenantId/:googleProjectId/upload-images", async (req, res, next) => {
     try {
-      const gcsService = new FileUploaderGCSService(context).getInstance({
-        projectId: req.params.googleProjectId
-      });
+      const gcsService = new FileUploaderGCSService(context).getInstance({});
       gcsService.getArrayMiddleware("files")(req, res, async (err) => {
         if (err) return next(err);
         try {
@@ -57,9 +58,7 @@ const mediaAssetController = (context: AppContext) => {
 
   router.post("/:googleProjectId/upload-videos", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const gcsService = new FileUploaderGCSService(context).getInstance({
-        projectId: req.params.googleProjectId
-      });
+      const gcsService = new FileUploaderGCSService(context).getInstance({});
       gcsService.getArrayMiddleware()(req, res, async (err) => {
         if (err) return next(err);
         try {

@@ -1,7 +1,9 @@
 import AttributeService from "../module/attribute/database/services";
 import AuthService from "../module/auth/database/services";
 import ContentCollectionService from "../module/content-collection/database/services";
+import ContentTranslationService from "../module/content-translation/database/services";
 import ContentService from "../module/content/database/services";
+import FolderService from "../module/folder/database/services";
 import MediaAssetService from "../module/media-asset/database/services";
 import TenantLocaleService from "../module/tenant-locale/database/services";
 import TenantService from "../module/tenant/database/services";
@@ -16,7 +18,9 @@ export type ServiceMap = {
   ContentCollectionService: ContentCollectionService;
   AttributeService: AttributeService;
   ContentService: ContentService;
+  ContentTranslationService: ContentTranslationService;
   MediaAssetService: MediaAssetService;
+  FolderService: FolderService;
 };
 
 export class DIContainer {
@@ -45,7 +49,9 @@ export async function createDIContainer(context: AppContext) {
   const contentCollectionService = new ContentCollectionService(context);
   const attributeService = new AttributeService(context);
   const contentService = new ContentService(context);
+  const contentTranslation = new ContentTranslationService(context);
   const mediaAssetService = new MediaAssetService(context);
+  const folderService = new FolderService(context);
 
   // Register all services
   container.register("AuthService", authService);
@@ -55,7 +61,9 @@ export async function createDIContainer(context: AppContext) {
   container.register("ContentCollectionService", contentCollectionService);
   container.register("AttributeService", attributeService);
   container.register("ContentService", contentService);
+  container.register("ContentTranslationService", contentTranslation);
   container.register("MediaAssetService", mediaAssetService);
+  container.register("FolderService", folderService);
 
   // Call init for each service
   authService.init();
@@ -65,5 +73,7 @@ export async function createDIContainer(context: AppContext) {
   contentCollectionService.init();
   attributeService.init();
   contentService.init();
+  contentTranslation.init()
   mediaAssetService.init();
+  folderService.init();
 }

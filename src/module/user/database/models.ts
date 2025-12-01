@@ -3,7 +3,7 @@ import { ObjectId } from "mongodb";
 export interface User {
   _id: ObjectId;
   username: string;
-  password: string; // Optional for update operations
+  password: string;
   orgBucketName: string | null;
   createdAt?: Date;
   updatedAt?: Date | null;

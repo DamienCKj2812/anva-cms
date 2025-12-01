@@ -44,6 +44,9 @@ class ContentCollectionService extends BaseService {
     if (!("displayName" in data)) {
       throw new ValidationError('"displayName" field is required');
     }
+    if (!("contentTranslationDto" in data)) {
+      throw new ValidationError('"contentTranslation" field is required');
+    }
     validateObjectId(tenantId);
     const tenant = await this.tenantService.getById(tenantId);
     if (!tenant) {
@@ -240,8 +243,16 @@ class ContentCollectionService extends BaseService {
     if (!contentCollection) {
       throw new NotFoundError("Content collection not found");
     }
-
-    const schema = contentCollection.schema ?? {};
+    const schema = contentCollection.schema ?? {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    };
+    if (!schema.properties) schema.properties = {};
+    if (!schema.required) schema.required = [];
+    if (schema.additionalProperties === undefined) schema.additionalProperties = false;
+    if (schema.type !== "object") schema.type = "object";
     if (schema.type !== "object") schema.type = "object";
     if (!schema.properties) schema.properties = {};
     if (!schema.required) schema.required = [];

@@ -7,16 +7,17 @@ import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { Content, ContentCount, ContentStatusEnum, CreateContentData, UpdateContentData } from "./models";
 import ContentCollectionService from "../../content-collection/database/services";
-import ajv from "../../../utils/helper.ajv";
-import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
+import { getCurrentUserId } from "../../../utils/helper.auth";
+import ContentTranslationService from "../../content-translation/database/services";
 
 class ContentService extends BaseService {
   private db: Db;
   private collection: Collection<Content>;
   public readonly collectionName = "contents";
-  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentData> = new Set(["data", "status"] as const);
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentData> = new Set(["status"] as const);
   private contentCollectionService: ContentCollectionService;
+  private contentTranslationService: ContentTranslationService;
 
   constructor(context: AppContext) {
     super(context);
@@ -26,32 +27,23 @@ class ContentService extends BaseService {
 
   async init() {
     this.contentCollectionService = this.getService("ContentCollectionService");
+    this.contentTranslationService = this.getService("ContentTranslationService");
   }
 
   private async createValidation(createData: CreateContentData): Promise<{ validatedData: CreateContentData; contentCollection: ContentCollection }> {
-    const { contentCollectionId, data, status } = createData;
+    const { contentCollectionId, status } = createData;
     if (!("contentCollectionId" in createData)) {
       throw new ValidationError('"contentCollectionId" field is required');
-    }
-    if (!("data" in createData)) {
-      throw new ValidationError('"data" field is required');
     }
     if (!("status" in createData)) {
       throw new ValidationError('"status" field is required');
     }
+    if (!("contentTranslationDto" in createData)) {
+      throw new ValidationError('"contentTranslation" field is required');
+    }
     const contentCollection = await this.contentCollectionService.getById(contentCollectionId);
     if (!contentCollection) {
       throw new NotFoundError("Content collection not found");
-    }
-    let validate: ValidateFunction;
-    try {
-      validate = ajv.compile(contentCollection.schema);
-    } catch (err) {
-      throw new Error(`Invalid schema: ${(err as Error).message}`);
-    }
-    if (!validate(data)) {
-      const errorText = ajv.errorsText(validate.errors, { separator: ", " });
-      throw new ValidationError(`Data validation failed: ${errorText}`);
     }
     if (!Object.values(ContentStatusEnum).includes(status as ContentStatusEnum)) {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
@@ -64,16 +56,29 @@ class ContentService extends BaseService {
 
   async create(data: CreateContentData): Promise<Content> {
     const { contentCollection, validatedData } = await this.createValidation(data);
+    const userId = getCurrentUserId(this.context);
     const newContent: Content = {
+      _id: new ObjectId(),
       contentCollectionId: contentCollection._id!,
-      data: validatedData.data,
       status: validatedData.status as ContentStatusEnum,
       createdAt: new Date(),
       updatedAt: null,
+      createdBy: userId,
     };
-    const result = await this.collection.insertOne(newContent);
-    return { _id: result.insertedId, ...newContent };
+    await this.collection.insertOne(newContent);
+    try {
+      await this.contentTranslationService.create(
+        data.contentTranslationDto,
+        contentCollection,
+        newContent
+      );
+    } catch (err) {
+      await this.collection.deleteOne({ _id: newContent._id });
+      throw err;
+    }
+    return newContent;
   }
+
 
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<Content>> {
     const options = {
@@ -106,7 +111,7 @@ class ContentService extends BaseService {
     contentId: string,
     updateData: UpdateContentData
   ): Promise<{ content: Content; contentCollection: ContentCollection; validatedData: UpdateContentData }> {
-    const { data, status } = updateData;
+    const { status } = updateData;
 
     if (!contentId) {
       throw new BadRequestError("Missing content Id");
@@ -119,36 +124,6 @@ class ContentService extends BaseService {
     if (!contentCollection) {
       throw new NotFoundError("Content collection not found");
     }
-    if (!("data" in updateData) && !("status" in updateData)) {
-      throw new BadRequestError("No valid fields provided for update");
-    }
-    if (data !== undefined) {
-      const existingData = content.data || {};
-      // Use parsed object only if data is a string
-      const newData = typeof data === "string" ? JSON.parse(data) : data;
-      const allowedKeys = Object.keys(contentCollection.schema.properties);
-      const mergedData = { ...existingData };
-      for (const key of allowedKeys) {
-        if (key in newData) {
-          mergedData[key] = newData[key];
-        }
-      }
-      let validate: ValidateFunction;
-      try {
-        validate = ajv.compile(contentCollection.schema);
-      } catch (err) {
-        throw new Error(`Invalid schema: ${(err as Error).message}`);
-      }
-
-      if (!validate(mergedData)) {
-        const errorText = ajv.errorsText(validate.errors, { separator: ", " });
-        throw new ValidationError(`Data validation failed: ${errorText}`);
-      }
-
-      // Use the merged data for the update
-      updateData.data = JSON.stringify(mergedData);
-    }
-
     if (status !== undefined && !Object.values(ContentStatusEnum).includes(status as ContentStatusEnum)) {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
     }
@@ -163,7 +138,6 @@ class ContentService extends BaseService {
     const updatingFields: Partial<Content> = {
       ...validatedData,
       status: validatedData.status as ContentStatusEnum,
-      ...(validatedData.data ? { data: JSON.parse(validatedData.data) } : {}),
     };
     const updatedContent = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },

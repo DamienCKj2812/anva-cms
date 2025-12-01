@@ -52,6 +52,7 @@ class TenantService extends BaseService {
 
     console.log("Creating tenant:", name);
     const newTenant: Tenant = {
+      _id: new ObjectId(),
       name: name.trim(),
       createdAt: new Date(),
       createdBy,
@@ -62,7 +63,7 @@ class TenantService extends BaseService {
       data: { tenantId: result.insertedId.toString(), displayName: "en", locale: "en", createdBy: data.createdBy },
       isDefault: true,
     });
-    return { _id: result.insertedId, ...newTenant };
+    return newTenant;
   }
 
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<Tenant>> {

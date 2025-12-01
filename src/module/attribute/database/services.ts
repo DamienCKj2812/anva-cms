@@ -201,8 +201,9 @@ class AttributeService extends BaseService {
     const createdBy = getCurrentUserId(this.context);
 
     console.log("Creating attribute: ", validatedData);
-    const attributeCount = await this.collection.countDocuments({ contentCollectionId: new Object(validatedData.contentCollectionId) });
+    const attributeCount = await this.collection.countDocuments({ contentCollectionId: new ObjectId(validatedData.contentCollectionId) });
     const newAttribute: Attribute = {
+      _id: new ObjectId(),
       contentCollectionId: new ObjectId(validatedData.contentCollectionId),
       key: validatedData.key,
       label: validatedData.label,
@@ -223,7 +224,7 @@ class AttributeService extends BaseService {
     }
     await this.contentCollectionService.addSchema(contentCollection._id?.toString()!, newAttribute);
     await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
-    return { _id: result.insertedId, ...newAttribute };
+    return newAttribute;
   }
 
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<Attribute>> {

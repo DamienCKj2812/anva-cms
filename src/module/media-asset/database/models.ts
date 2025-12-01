@@ -1,16 +1,11 @@
 import { ObjectId } from "mongodb";
 
-export enum MediaTypeEnum {
-  FILE = "file",
-  FOLDER = "folder",
-}
 
 export interface MediaAsset {
-  _id?: ObjectId;
+  _id: ObjectId;
   tenantId: ObjectId;
   parentId: ObjectId | null; // under which folder
-  mediaType: MediaTypeEnum; // "file" or "folder"
-  originalFileName: string; // server only
+  originalFileName: string | null; // file only (for server)
   name: string; // for client
 
   // File-specific fields (only for type = 'file')
@@ -39,11 +34,6 @@ export interface MediaAsset {
 export interface CreateFileData {
   tenantId: string;
   parentId: string | null;
-}
-
-export interface CreateFolderData {
-  tenantId: string;
-  parentId?: string;
 }
 
 export interface UpdateMediaAsset {

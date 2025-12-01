@@ -5,18 +5,21 @@ import { WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import { CreateFileData, MediaAsset, MediaTypeEnum } from "./models";
+import { CreateFileData, MediaAsset } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Tenant } from "../../tenant/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
 import FileUploaderGCSService from "../../../utils/helper.fileUploadGCSService";
 import path from "path";
+import FolderService from "../../folder/database/services";
+import { Folder } from "../../folder/database/models";
 
 class MediaAssetService extends BaseService {
   private db: Db;
   private collection: Collection<MediaAsset>;
   public readonly collectionName = "media-asset";
   private tenantService: TenantService;
+  private folderService: FolderService;
 
   constructor(context: AppContext) {
     super(context);
@@ -26,6 +29,7 @@ class MediaAssetService extends BaseService {
 
   async init() {
     this.tenantService = this.getService("TenantService");
+    this.folderService = this.getService("FolderService");
     await this.collection.createIndex({ tenantId: 1, parentId: 1, name: 1 });
   }
 
@@ -49,7 +53,7 @@ class MediaAssetService extends BaseService {
     return assets;
   }
 
-  private async createFileValidation(data: CreateFileData): Promise<{ validatedData: CreateFileData; tenant: Tenant; parent: MediaAsset | null }> {
+  private async createFileValidation(data: CreateFileData): Promise<{ validatedData: CreateFileData; tenant: Tenant; parent: Folder | null }> {
     const { tenantId, parentId } = data;
     if (!tenantId) {
       throw new BadRequestError('"tenantId" field is required');
@@ -58,9 +62,9 @@ class MediaAssetService extends BaseService {
     if (!tenant) {
       throw new NotFoundError("tenant not found");
     }
-    let parent: null | MediaAsset = null;
+    let parent: null | Folder = null;
     if (parentId) {
-      parent = await this.findOne({ _id: new ObjectId(parentId) });
+      parent = await this.folderService.findOne({ _id: new ObjectId(parentId) });
       if (!parent) {
         throw new NotFoundError("parent not found");
       }
@@ -92,8 +96,8 @@ class MediaAssetService extends BaseService {
 
       const storageKey = fileUploaderGCSService.getStorageKey(file);
       const asset: MediaAsset = {
-        tenantId: tenant._id!,
-        mediaType: MediaTypeEnum.FILE,
+        _id: new ObjectId(),
+        tenantId: tenant._id,
         originalFileName: file.originalname,
         name: names[i],
         parentId: parent?._id ?? null,
@@ -160,8 +164,8 @@ class MediaAssetService extends BaseService {
 
       const storageKey = fileUploaderGCSService.getStorageKey(file);
       const asset: MediaAsset = {
+        _id: new ObjectId(),
         tenantId: tenant._id!,
-        mediaType: MediaTypeEnum.FILE,
         originalFileName: file.originalname,
         name: names[i],
         parentId: parent?._id ?? null,

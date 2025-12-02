@@ -24,7 +24,7 @@ const contentTranslationController = (context: AppContext) => {
 
       const [contentCollection, content] = await Promise.all([
         contentCollectionService.findOne({ _id: new ObjectId(contentCollectionId) }),
-        contentService.findOne({ _id: new ObjectId(contentId) })
+        contentService.findOne({ _id: new ObjectId(contentId) }),
       ]);
 
       if (!contentCollection) throw new NotFoundError("contentCollection not found");
@@ -39,7 +39,6 @@ const contentTranslationController = (context: AppContext) => {
     }
   });
 
-
   router.post("/list", async (req, res, next) => {
     try {
       const userId = getCurrentUserId(context);
@@ -51,15 +50,23 @@ const contentTranslationController = (context: AppContext) => {
         match._id = new ObjectId(filter._id);
       }
 
+      if (filter.contentCollectionId) {
+        match.contentCollectionId = new ObjectId(filter.contentCollectionId);
+      }
+
       if (filter.contentId) {
         match.contentId = new ObjectId(filter.contentId);
+      }
+
+      if (filter.locale) {
+        match.locale = filter.locale;
       }
 
       match.createdBy = userId;
 
       const contents = await contentTranslationService.list({
         match,
-        lookup: Array.isArray(lookup) ? lookup : undefined
+        lookup: Array.isArray(lookup) ? lookup : undefined,
       });
 
       res.status(200).json(successResponse(contents));

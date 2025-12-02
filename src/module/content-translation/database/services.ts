@@ -1,4 +1,4 @@
-import { ObjectId, Db, Collection, FindOptions } from "mongodb";
+import { ObjectId, Db, Collection, FindOptions, Filter } from "mongodb";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
@@ -20,7 +20,7 @@ class ContentTranslationService extends BaseService {
   public readonly collectionName = "content-translations";
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentTranslationData> = new Set(["data", "status"] as const);
   private contentCollectionService: ContentCollectionService;
-  private tenantLocaleService: TenantLocaleService
+  private tenantLocaleService: TenantLocaleService;
 
   constructor(context: AppContext) {
     super(context);
@@ -30,10 +30,13 @@ class ContentTranslationService extends BaseService {
 
   async init() {
     this.contentCollectionService = this.getService("ContentCollectionService");
-    this.tenantLocaleService = this.getService("TenantLocaleService")
+    this.tenantLocaleService = this.getService("TenantLocaleService");
   }
 
-  private async createValidation(createData: CreateContentTranslationData, contentCollection: ContentCollection): Promise<{ validatedData: CreateContentTranslationData; }> {
+  private async createValidation(
+    createData: CreateContentTranslationData,
+    contentCollection: ContentCollection,
+  ): Promise<{ validatedData: CreateContentTranslationData }> {
     const { data, status, locale } = createData;
 
     if (!("data" in createData)) {
@@ -46,7 +49,6 @@ class ContentTranslationService extends BaseService {
       throw new ValidationError('"locale" field is required');
     }
     let validate: ValidateFunction;
-    console.log({ schema: contentCollection.schema })
     try {
       if (!contentCollection.schema) {
         throw new Error("Content collection schema is missing");
@@ -62,7 +64,7 @@ class ContentTranslationService extends BaseService {
     if (!Object.values(ContentStatusEnum).includes(status as ContentStatusEnum)) {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
     }
-    const tenantLocale = await this.tenantLocaleService.findOne({ tenantId: new ObjectId(contentCollection.tenantId), locale: locale })
+    const tenantLocale = await this.tenantLocaleService.findOne({ tenantId: new ObjectId(contentCollection.tenantId), locale: locale });
     if (!tenantLocale) {
       throw new ValidationError(`current ${locale} is not supported`);
     }
@@ -73,7 +75,7 @@ class ContentTranslationService extends BaseService {
 
   async create(data: CreateContentTranslationData, contentCollection: ContentCollection, content: Content): Promise<ContentTranslation> {
     const { validatedData } = await this.createValidation(data, contentCollection);
-    const userId = getCurrentUserId(this.context)
+    const userId = getCurrentUserId(this.context);
     const newContent: ContentTranslation = {
       _id: new ObjectId(),
       contentCollectionId: content.contentCollectionId,
@@ -88,9 +90,8 @@ class ContentTranslationService extends BaseService {
 
     await this.collection.insertOne(newContent);
 
-    return newContent
+    return newContent;
   }
-
 
   async list({
     match,
@@ -103,7 +104,7 @@ class ContentTranslationService extends BaseService {
   }): Promise<FullContentTranslation[]> {
     const pipeline: any[] = [{ $match: match }];
 
-    if (!lookup?.includes("contentCollection")) {
+    if (lookup?.includes("contentCollection")) {
       pipeline.push(
         {
           $lookup: {
@@ -113,11 +114,11 @@ class ContentTranslationService extends BaseService {
             as: "contentCollection",
           },
         },
-        { $unwind: { path: "$contentCollection", preserveNullAndEmptyArrays: true } }
+        { $unwind: { path: "$contentCollection", preserveNullAndEmptyArrays: true } },
       );
     }
 
-    if (!lookup?.includes("content")) {
+    if (lookup?.includes("content")) {
       pipeline.push(
         {
           $lookup: {
@@ -127,7 +128,7 @@ class ContentTranslationService extends BaseService {
             as: "content",
           },
         },
-        { $unwind: { path: "$content", preserveNullAndEmptyArrays: true } }
+        { $unwind: { path: "$content", preserveNullAndEmptyArrays: true } },
       );
     }
 
@@ -154,14 +155,17 @@ class ContentTranslationService extends BaseService {
     return await this.collection.findOne({ _id: new ObjectId(id) });
   }
 
-
   async findOne(filter: Partial<ContentTranslation>, options?: FindOptions<ContentTranslation>): Promise<Content | null> {
     return await this.collection.findOne(filter, options);
   }
 
+  async findMany(filter: Filter<ContentTranslation>, options?: FindOptions<ContentTranslation>): Promise<ContentTranslation[]> {
+    return this.collection.find(filter, options).toArray();
+  }
+
   private async updateValidation(
     contentTranslationId: string,
-    updateData: UpdateContentTranslationData
+    updateData: UpdateContentTranslationData,
   ): Promise<{ contentTranslation: ContentTranslation; contentCollection: ContentCollection; validatedData: UpdateContentTranslationData }> {
     const { data, status } = updateData;
 
@@ -228,7 +232,7 @@ class ContentTranslationService extends BaseService {
     const updatedContent = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
-      { returnDocument: "after" }
+      { returnDocument: "after" },
     );
     if (!updatedContent) {
       throw new NotFoundError("failed to update content");

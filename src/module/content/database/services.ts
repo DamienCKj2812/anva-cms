@@ -57,6 +57,7 @@ class ContentService extends BaseService {
   async create(data: CreateContentData): Promise<Content> {
     const { contentCollection, validatedData } = await this.createValidation(data);
     const userId = getCurrentUserId(this.context);
+    console.log({ createData: data });
     const newContent: Content = {
       _id: new ObjectId(),
       contentCollectionId: contentCollection._id!,
@@ -67,18 +68,13 @@ class ContentService extends BaseService {
     };
     await this.collection.insertOne(newContent);
     try {
-      await this.contentTranslationService.create(
-        data.contentTranslationDto,
-        contentCollection,
-        newContent
-      );
+      await this.contentTranslationService.create(data.contentTranslationDto, contentCollection, newContent);
     } catch (err) {
       await this.collection.deleteOne({ _id: newContent._id });
       throw err;
     }
     return newContent;
   }
-
 
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<Content>> {
     const options = {
@@ -109,7 +105,7 @@ class ContentService extends BaseService {
 
   private async updateValidation(
     contentId: string,
-    updateData: UpdateContentData
+    updateData: UpdateContentData,
   ): Promise<{ content: Content; contentCollection: ContentCollection; validatedData: UpdateContentData }> {
     const { status } = updateData;
 
@@ -142,7 +138,7 @@ class ContentService extends BaseService {
     const updatedContent = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
-      { returnDocument: "after" }
+      { returnDocument: "after" },
     );
     if (!updatedContent) {
       throw new NotFoundError("failed to update content");

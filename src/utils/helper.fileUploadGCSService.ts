@@ -23,7 +23,15 @@ class FileUploaderGCSService extends BaseService {
     super(context);
   }
 
-  getInstance({ allowedMimeTypes, maxFileSize, maxFiles }: { allowedMimeTypes?: string[], maxFileSize?: number, maxFiles?: number }): FileUploaderGCSService {
+  getInstance({
+    allowedMimeTypes,
+    maxFileSize,
+    maxFiles,
+  }: {
+    allowedMimeTypes?: string[];
+    maxFileSize?: number;
+    maxFiles?: number;
+  }): FileUploaderGCSService {
     this.config = {
       allowedMimeTypes: allowedMimeTypes || configs.GCLOUD_CONFIGS.ALLOWED_MIME_TYPES,
       maxFileSize: maxFileSize || configs.GCLOUD_CONFIGS.MAX_FILE_SIZE,
@@ -33,7 +41,7 @@ class FileUploaderGCSService extends BaseService {
       keyFilename: path.join(__dirname, "../../gcloud-service-account.json"),
     });
     this.upload = this.configureMulter();
-    return this
+    return this;
   }
 
   // Configure multer (memory storage)
@@ -65,7 +73,7 @@ class FileUploaderGCSService extends BaseService {
 
   public async uploadImageToGCS(
     file: Express.Multer.File,
-    clientWidth?: number
+    clientWidth?: number,
   ): Promise<{ storageKey: string; url: string; width: number; height: number }> {
     if (!file.mimetype.startsWith("image/")) {
       throw new BadRequestError(`${file.originalname} is not an image`);
@@ -74,8 +82,6 @@ class FileUploaderGCSService extends BaseService {
     const metadata = await sharp(compressedBuffer).metadata();
     const width = metadata.width ?? 0;
     const height = metadata.height ?? 0;
-
-    console.log("width: ", width, "- height: ", height);
 
     const bucketName = this.context.orgBucketName || configs.GCLOUD_CONFIGS.GCLOUD_DEFAULT_BUCKET;
     const bucket = this.storage.bucket(bucketName);

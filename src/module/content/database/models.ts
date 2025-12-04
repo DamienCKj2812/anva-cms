@@ -9,11 +9,12 @@ export enum ContentStatusEnum {
 
 export interface Content {
   _id: ObjectId;
+  tenantId: ObjectId;
   contentCollectionId: ObjectId;
   status: ContentStatusEnum;
   createdAt: Date;
   updatedAt: Date | null;
-  createdBy: ObjectId
+  createdBy: ObjectId;
 }
 
 export interface ContentCount {

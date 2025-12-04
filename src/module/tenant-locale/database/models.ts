@@ -19,5 +19,6 @@ export interface CreateTenantLocaleData {
 }
 
 export interface UpdateTenantLocaleData {
+  locale?: string;
   displayName?: string;
 }

@@ -29,6 +29,7 @@ class AttributeService extends BaseService {
     "defaultValue",
     "enumValues",
     "validation",
+    "inheritDefault",
   ] as const);
   private contentCollectionService: ContentCollectionService;
 
@@ -114,7 +115,7 @@ class AttributeService extends BaseService {
   }
 
   private async createValidation(data: CreateAttributeData): Promise<{ validatedData: CreateAttributeData; contentCollection: ContentCollection }> {
-    const { contentCollectionId, key, label, type, required, format, defaultValue, enumValues, validation } = data;
+    const { contentCollectionId, key, label, type, required, format, defaultValue, enumValues, validation, inheritDefault } = data;
     if (!("contentCollectionId" in data)) {
       throw new ValidationError('"contentCollectionId" field is required');
     }
@@ -129,6 +130,9 @@ class AttributeService extends BaseService {
     }
     if (!("required" in data)) {
       throw new ValidationError('"required" field is required');
+    }
+    if (!("inheritDefault" in data)) {
+      throw new ValidationError('"inheritDefault" field is required');
     }
     const contentCollection = await this.contentCollectionService.getById(contentCollectionId);
     if (!contentCollection) {
@@ -148,6 +152,9 @@ class AttributeService extends BaseService {
     }
     if (typeof required !== "boolean") {
       throw new ValidationError("required must be a boolean");
+    }
+    if (typeof inheritDefault !== "boolean") {
+      throw new ValidationError("inheritDefault must be a boolean");
     }
     if (format !== undefined && !Object.values(FormatTypeEnum).includes(format)) {
       throw new ValidationError(`Format type must be one of: ${Object.values(FormatTypeEnum).join(", ")}`);
@@ -214,6 +221,7 @@ class AttributeService extends BaseService {
       enumValues: validatedData.enumValues,
       validation: validatedData.validation,
       position: attributeCount,
+      inheritDefault: validatedData.inheritDefault,
       createdBy,
       createdAt: new Date(),
       updatedAt: null,
@@ -251,7 +259,7 @@ class AttributeService extends BaseService {
   }
 
   private async updateValidation(attribute: Attribute, data: UpdateAttributeData): Promise<UpdateAttributeData> {
-    const { label, required, format, defaultValue, enumValues, validation, isTranslatable } = data;
+    const { label, required, format, defaultValue, enumValues, validation, inheritDefault } = data;
     if (
       !("label" in data) &&
       !("required" in data) &&
@@ -259,7 +267,7 @@ class AttributeService extends BaseService {
       !("defaultValue" in data) &&
       !("enumValues" in data) &&
       !("validation" in data) &&
-      !("isTranslatable" in data)
+      !("inheritDefault" in data)
     ) {
       throw new NotFoundError("No valid fields provided for update");
     }
@@ -330,9 +338,9 @@ class AttributeService extends BaseService {
       if (validation !== undefined) {
         await this.validateAttributeValidation(attribute.type, validation, format);
       }
-      if (typeof isTranslatable === "boolean") {
-        throw new Error("isTranslatable must be a boolean");
-      }
+    }
+    if (inheritDefault && typeof inheritDefault !== "boolean") {
+      throw new ValidationError("inheritDefault must be a boolean");
     }
     return data;
   }
@@ -351,7 +359,7 @@ class AttributeService extends BaseService {
     const updatedcontentCollection = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
-      { returnDocument: "after" }
+      { returnDocument: "after" },
     );
     if (!updatedcontentCollection) {
       throw new NotFoundError("failed to update contentCollection");

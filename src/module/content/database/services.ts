@@ -60,6 +60,7 @@ class ContentService extends BaseService {
     console.log({ createData: data });
     const newContent: Content = {
       _id: new ObjectId(),
+      tenantId: contentCollection.tenantId,
       contentCollectionId: contentCollection._id!,
       status: validatedData.status as ContentStatusEnum,
       createdAt: new Date(),

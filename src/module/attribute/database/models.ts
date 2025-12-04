@@ -36,6 +36,7 @@ export interface Attribute {
   enumValues?: string[];
   validation?: ValidationRules;
   position: number;
+  inheritDefault: boolean;
   createdBy: ObjectId;
   createdAt: Date;
   updatedAt: Date | null;
@@ -45,10 +46,10 @@ export interface UpdateAttributeData {
   label?: string;
   format?: FormatTypeEnum;
   required?: boolean;
+  inheritDefault?: boolean;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
-  isTranslatable?: boolean;
 }
 
 export type CreateAttributeData = {
@@ -57,6 +58,7 @@ export type CreateAttributeData = {
   label: string;
   type: AttributeTypeEnum;
   required: boolean;
+  inheritDefault: boolean;
   format?: FormatTypeEnum;
   defaultValue?: any;
   enumValues?: string[];

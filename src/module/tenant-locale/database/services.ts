@@ -1,5 +1,4 @@
 import { ObjectId, Db, Collection, FindOptions, Filter } from "mongodb";
-import { getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
@@ -8,13 +7,17 @@ import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { CreateTenantLocaleData, TenantLocale, UpdateTenantLocaleData } from "./models";
 import TenantService from "../../tenant/database/services";
+import ContentTranslationService from "../../content-translation/database/services";
+import ContentService from "../../content/database/services";
 
 class TenantLocaleService extends BaseService {
   private db: Db;
   private collection: Collection<TenantLocale>;
   public readonly collectionName = "tenant-locales";
-  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateTenantLocaleData> = new Set(["displayName"] as const);
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateTenantLocaleData> = new Set(["displayName", "locale"] as const);
   private tenantService: TenantService;
+  private contentService: ContentService;
+  private contentTranslationService: ContentTranslationService;
 
   constructor(context: AppContext) {
     super(context);
@@ -24,6 +27,8 @@ class TenantLocaleService extends BaseService {
 
   async init() {
     this.tenantService = this.getService("TenantService");
+    this.contentService = this.getService("ContentService");
+    this.contentTranslationService = this.getService("ContentTranslationService");
   }
 
   private async createValidation(data: CreateTenantLocaleData): Promise<CreateTenantLocaleData> {
@@ -96,6 +101,22 @@ class TenantLocaleService extends BaseService {
     return await this.collection.findOne({ _id: new ObjectId(id) });
   }
 
+  async getRemainingLocales(contentId: string): Promise<TenantLocale[]> {
+    const content = await this.contentService.findOne({ _id: new ObjectId(contentId) });
+    if (!content) {
+      throw new NotFoundError("content not found");
+    }
+    const tenantLocales = await this.findMany({
+      tenantId: content.tenantId,
+    });
+    const translations = await this.contentTranslationService.findMany({
+      contentId: content._id,
+    });
+    const createdLocales = new Set(translations.map((t) => t.locale));
+    const remainingLocales = tenantLocales.filter((t) => !createdLocales.has(t.locale));
+    return remainingLocales;
+  }
+
   async findOne(filter: Partial<TenantLocale>, options?: FindOptions<TenantLocale>): Promise<TenantLocale | null> {
     return await this.collection.findOne(filter, options);
   }
@@ -105,13 +126,37 @@ class TenantLocaleService extends BaseService {
   }
 
   private async updateValidation(tenantLocale: TenantLocale, data: UpdateTenantLocaleData): Promise<Partial<TenantLocale>> {
-    const { displayName } = data;
-    if (!("displayName" in data) && !("slug" in data)) {
+    const { displayName, locale } = data;
+    if (!("displayName" in data) && !("locale" in data)) {
       throw new BadRequestError("No valid fields provided for update");
     }
     if ("displayName" in data) {
       if (typeof displayName !== "string" || !displayName.trim()) {
         throw new ValidationError("displayName must be a non-empty string");
+      }
+      const exists = await this.collection.findOne({
+        tenantId: tenantLocale.tenantId,
+        displayName: displayName.trim(),
+        _id: { $ne: tenantLocale._id }, // exclude current
+      });
+      if (exists) {
+        throw new ValidationError("displayName already exists for this tenant");
+      }
+    }
+    if ("locale" in data) {
+      if (typeof locale !== "string" || !locale.trim()) {
+        throw new ValidationError("locale must be a non-empty string");
+      }
+      if (locale.trim() === tenantLocale.locale) {
+        throw new ValidationError("locale is the same as existing value");
+      }
+      const exists = await this.collection.findOne({
+        tenantId: tenantLocale.tenantId,
+        locale: locale.trim(),
+        _id: { $ne: tenantLocale._id }, // exclude current
+      });
+      if (exists) {
+        throw new ValidationError("locale already exists for this tenant");
       }
     }
     return data;
@@ -127,10 +172,13 @@ class TenantLocaleService extends BaseService {
     const updatingFields: Partial<TenantLocale> = {
       ...validatedData,
     };
+    if (filteredUpdateData.locale) {
+      await this.contentTranslationService.updateMany({ tenantId: tenantLocale.tenantId }, { $set: { locale: filteredUpdateData.locale } });
+    }
     const updatedTenantLocale = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
-      { returnDocument: "after" }
+      { returnDocument: "after" },
     );
     if (!updatedTenantLocale) {
       throw new NotFoundError("failed to update tenantLocale");

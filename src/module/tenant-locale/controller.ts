@@ -54,6 +54,15 @@ const tenantLocaleController = (context: AppContext) => {
     }
   });
 
+  router.post("/:contentId/get-existing-locales", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const updatedtenantLocaleLocale = await tenantLocaleService.getRemainingLocales(req.params.contentId);
+      res.json(successResponse(updatedtenantLocaleLocale));
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const updatedtenantLocaleLocale = await tenantLocaleService.update(req.params.id, req.body);

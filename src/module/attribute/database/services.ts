@@ -7,10 +7,11 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import {
   Attribute,
+  AttributeFormatEnum,
   AttributeTypeEnum,
   CreateAttributeData,
   DeleteAttributeResponse,
-  FormatTypeEnum,
+  SchemaTypeEnum,
   UpdateAttributeData,
   ValidationRules,
 } from "./models";
@@ -24,7 +25,6 @@ class AttributeService extends BaseService {
   public readonly collectionName = "attributes";
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateAttributeData> = new Set([
     "label",
-    "format",
     "required",
     "defaultValue",
     "enumValues",
@@ -43,7 +43,7 @@ class AttributeService extends BaseService {
     this.contentCollectionService = this.getService("ContentCollectionService");
   }
 
-  async validateAttributeValidation(type: AttributeTypeEnum, validation: ValidationRules | undefined, format?: FormatTypeEnum) {
+  async validateAttributeValidation(type: AttributeTypeEnum, validation?: ValidationRules, format?: AttributeFormatEnum) {
     if (!validation) return;
     const { minLength, maxLength, minimum, maximum, pattern } = validation;
     const normalizedFormat = format && format.trim() ? format.trim() : undefined;
@@ -66,8 +66,8 @@ class AttributeService extends BaseService {
         if (minimum !== undefined || maximum !== undefined) {
           throw new ValidationError("minimum/maximum cannot be used for type=string");
         }
-        if (format !== undefined && !Object.values(FormatTypeEnum).includes(format)) {
-          throw new ValidationError(`Format must be one of: ${Object.values(FormatTypeEnum).join(", ")}`);
+        if (format !== undefined && !Object.values(AttributeFormatEnum).includes(format)) {
+          throw new ValidationError(`Format must be one of: ${Object.values(AttributeFormatEnum).join(", ")}`);
         }
         if (minLength !== undefined && maxLength !== undefined) {
           if (minLength > maxLength) {
@@ -99,8 +99,6 @@ class AttributeService extends BaseService {
         break;
 
       case AttributeTypeEnum.BOOLEAN:
-      case AttributeTypeEnum.ARRAY:
-      case AttributeTypeEnum.OBJECT:
         if (minLength !== undefined || maxLength !== undefined || pattern !== undefined || minimum !== undefined || maximum !== undefined) {
           throw new ValidationError(`validation is not supported for type=${type}`);
         }
@@ -115,7 +113,19 @@ class AttributeService extends BaseService {
   }
 
   private async createValidation(data: CreateAttributeData): Promise<{ validatedData: CreateAttributeData; contentCollection: ContentCollection }> {
-    const { contentCollectionId, key, label, type, required, format, defaultValue, enumValues, validation, inheritDefault } = data;
+    const {
+      contentCollectionId,
+      key,
+      label,
+      schemaType,
+      attributeType,
+      attributeFormat,
+      required,
+      defaultValue,
+      enumValues,
+      validation,
+      inheritDefault,
+    } = data;
     if (!("contentCollectionId" in data)) {
       throw new ValidationError('"contentCollectionId" field is required');
     }
@@ -125,8 +135,11 @@ class AttributeService extends BaseService {
     if (!("label" in data)) {
       throw new ValidationError('"label" field is required');
     }
-    if (!("type" in data)) {
-      throw new ValidationError('"type" field is required');
+    if (!("schemaType" in data)) {
+      throw new ValidationError('"schemaType" field is required');
+    }
+    if (!("attributeType" in data)) {
+      throw new ValidationError('"attributeType" field is required');
     }
     if (!("required" in data)) {
       throw new ValidationError('"required" field is required');
@@ -147,8 +160,11 @@ class AttributeService extends BaseService {
     if (typeof label !== "string" || !label.trim()) {
       throw new ValidationError("label must be a non-empty string");
     }
-    if (!Object.values(AttributeTypeEnum).includes(type)) {
-      throw new ValidationError(`Attribute type must be one of: ${Object.values(AttributeTypeEnum).join(", ")}`);
+    if (!Object.values(SchemaTypeEnum).includes(schemaType)) {
+      throw new ValidationError(`Schema type must be one of: ${Object.values(SchemaTypeEnum).join(", ")}`);
+    }
+    if (!Object.values(AttributeTypeEnum).includes(attributeType)) {
+      throw new ValidationError(`Attribute attributeType must be one of: ${Object.values(AttributeTypeEnum).join(", ")}`);
     }
     if (typeof required !== "boolean") {
       throw new ValidationError("required must be a boolean");
@@ -156,11 +172,11 @@ class AttributeService extends BaseService {
     if (typeof inheritDefault !== "boolean") {
       throw new ValidationError("inheritDefault must be a boolean");
     }
-    if (format !== undefined && !Object.values(FormatTypeEnum).includes(format)) {
-      throw new ValidationError(`Format type must be one of: ${Object.values(FormatTypeEnum).join(", ")}`);
+    if (attributeFormat !== undefined && !Object.values(AttributeFormatEnum).includes(attributeFormat)) {
+      throw new ValidationError(`Format type must be one of: ${Object.values(AttributeTypeEnum).join(", ")}`);
     }
     if (defaultValue !== undefined) {
-      switch (type) {
+      switch (attributeType) {
         case AttributeTypeEnum.STRING:
           if (typeof defaultValue !== "string" || !defaultValue.trim()) {
             throw new ValidationError("defaultValue must be a non-empty string");
@@ -176,16 +192,6 @@ class AttributeService extends BaseService {
             throw new ValidationError("defaultValue must be a boolean");
           }
           break;
-        case AttributeTypeEnum.ARRAY:
-          if (!Array.isArray(defaultValue)) {
-            throw new ValidationError("defaultValue must be an array");
-          }
-          break;
-        case AttributeTypeEnum.OBJECT:
-          if (typeof defaultValue !== "object" || Array.isArray(defaultValue)) {
-            throw new ValidationError("defaultValue must be an object");
-          }
-          break;
       }
     }
 
@@ -198,7 +204,7 @@ class AttributeService extends BaseService {
       }
     }
     if (validation !== undefined) {
-      await this.validateAttributeValidation(type, validation, format);
+      await this.validateAttributeValidation(attributeType, validation, attributeFormat);
     }
     return { validatedData: data, contentCollection };
   }
@@ -214,8 +220,9 @@ class AttributeService extends BaseService {
       contentCollectionId: new ObjectId(validatedData.contentCollectionId),
       key: validatedData.key,
       label: validatedData.label,
-      type: validatedData.type,
-      format: validatedData.format,
+      schemaType: validatedData.schemaType,
+      attributeType: validatedData.attributeType,
+      attributeFormat: validatedData.attributeFormat,
       required: validatedData.required,
       defaultValue: validatedData.defaultValue,
       enumValues: validatedData.enumValues,
@@ -259,11 +266,10 @@ class AttributeService extends BaseService {
   }
 
   private async updateValidation(attribute: Attribute, data: UpdateAttributeData): Promise<UpdateAttributeData> {
-    const { label, required, format, defaultValue, enumValues, validation, inheritDefault } = data;
+    const { label, required, defaultValue, enumValues, validation, inheritDefault } = data;
     if (
       !("label" in data) &&
       !("required" in data) &&
-      !("format" in data) &&
       !("defaultValue" in data) &&
       !("enumValues" in data) &&
       !("validation" in data) &&
@@ -277,11 +283,8 @@ class AttributeService extends BaseService {
     if (required && typeof required !== "boolean") {
       throw new ValidationError("required must be a boolean");
     }
-    if (format !== undefined && !Object.values(FormatTypeEnum).includes(format)) {
-      throw new ValidationError(`Format type must be one of: ${Object.values(FormatTypeEnum).join(", ")}`);
-    }
     if (defaultValue !== undefined) {
-      switch (attribute.type) {
+      switch (attribute.attributeType) {
         case AttributeTypeEnum.STRING:
           if (typeof defaultValue !== "string" || !defaultValue.trim()) {
             throw new ValidationError("defaultValue must be a non-empty string");
@@ -295,16 +298,6 @@ class AttributeService extends BaseService {
         case AttributeTypeEnum.BOOLEAN:
           if (typeof defaultValue !== "boolean") {
             throw new ValidationError("defaultValue must be a boolean");
-          }
-          break;
-        case AttributeTypeEnum.ARRAY:
-          if (!Array.isArray(defaultValue)) {
-            throw new ValidationError("defaultValue must be an array");
-          }
-          break;
-        case AttributeTypeEnum.OBJECT:
-          if (typeof defaultValue !== "object" || Array.isArray(defaultValue)) {
-            throw new ValidationError("defaultValue must be an object");
           }
           break;
       }
@@ -334,9 +327,8 @@ class AttributeService extends BaseService {
       if (pattern !== undefined && typeof pattern !== "string") {
         throw new ValidationError("validation.pattern must be a string (regex)");
       }
-
       if (validation !== undefined) {
-        await this.validateAttributeValidation(attribute.type, validation, format);
+        await this.validateAttributeValidation(attribute.attributeType, validation, attribute.attributeFormat);
       }
     }
     if (inheritDefault && typeof inheritDefault !== "boolean") {
@@ -356,16 +348,16 @@ class AttributeService extends BaseService {
     const updatingFields: Partial<Attribute> = {
       ...validatedData,
     };
-    const updatedcontentCollection = await this.collection.findOneAndUpdate(
+    const updatedAttribute = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
       { returnDocument: "after" },
     );
-    if (!updatedcontentCollection) {
+    if (!updatedAttribute) {
       throw new NotFoundError("failed to update contentCollection");
     }
-    await this.contentCollectionService.updateSchema(attribute, validatedData);
-    return updatedcontentCollection;
+    await this.contentCollectionService.updateSchema(attribute, updatedAttribute);
+    return updatedAttribute;
   }
 
   private async deleteValidation(id: string): Promise<{ attribute: Attribute; contentCollection: ContentCollection }> {

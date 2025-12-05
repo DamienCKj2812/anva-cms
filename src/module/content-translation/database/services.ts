@@ -14,6 +14,7 @@ import { getCurrentUserId } from "../../../utils/helper.auth";
 import TenantLocaleService from "../../tenant-locale/database/services";
 import { Content, ContentStatusEnum } from "../../content/database/models";
 import AttributeService from "../../attribute/database/services";
+import { TenantLocale } from "../../tenant-locale/database/models";
 
 class ContentTranslationService extends BaseService {
   private db: Db;
@@ -46,7 +47,6 @@ class ContentTranslationService extends BaseService {
     if (!data) throw new ValidationError('"data" field is required');
     if (!status) throw new ValidationError('"status" field is required');
     if (!locale) throw new ValidationError('"locale" field is required');
-    console.log({ data });
 
     const mergedData = { ...data };
     const defaultTenantLocale = await this.tenantLocaleService.findOne({
@@ -80,7 +80,6 @@ class ContentTranslationService extends BaseService {
         }
       }
     }
-    console.log({ mergedData });
     let validate: ValidateFunction;
     try {
       if (!contentCollection.schema) {
@@ -219,6 +218,7 @@ class ContentTranslationService extends BaseService {
     contentTranslation: ContentTranslation;
     contentCollection: ContentCollection;
     validatedData: UpdateContentTranslationData;
+    defaultTenantLocale: TenantLocale;
   }> {
     const { data, status } = updateData;
     if (!contentTranslationId) {
@@ -279,25 +279,64 @@ class ContentTranslationService extends BaseService {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
     }
 
-    return { contentTranslation, contentCollection, validatedData: updateData };
+    return { contentTranslation, contentCollection, validatedData: updateData, defaultTenantLocale };
   }
 
   async update(id: string, data: UpdateContentTranslationData): Promise<ContentTranslation> {
     validateObjectId(id);
+
     const filteredUpdateData = filterFields(data, ContentTranslationService.ALLOWED_UPDATE_FIELDS);
-    const { contentTranslation, contentCollection, validatedData } = await this.updateValidation(id, filteredUpdateData);
+
+    const { contentTranslation, contentCollection, validatedData, defaultTenantLocale } = await this.updateValidation(id, filteredUpdateData);
+    console.log({ validatedData: validatedData });
+
     const updatingFields: Partial<ContentTranslation> = {
       ...validatedData,
       status: validatedData.status as ContentStatusEnum,
-      ...(validatedData.data ? { data: JSON.parse(validatedData.data) } : {}),
+      ...(validatedData.data ? { data: typeof validatedData.data === "string" ? JSON.parse(validatedData.data) : validatedData.data } : {}),
     };
+
     const updatedContent = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
       { returnDocument: "after" },
     );
+
     if (!updatedContent) {
       throw new NotFoundError("failed to update content");
+    }
+
+    if (contentTranslation.locale === defaultTenantLocale.locale) {
+      const inheritAttributes = await this.attributeService.findMany({
+        contentCollectionId: contentCollection._id,
+        inheritDefault: true,
+      });
+
+      if (inheritAttributes.length > 0) {
+        const keysToUpdate = inheritAttributes.map((attr) => attr.key);
+        const bulkOps = await this.collection
+          .find({
+            contentId: contentTranslation.contentId,
+            locale: { $ne: defaultTenantLocale.locale },
+          })
+          .map((t) => {
+            const newData = { ...t.data };
+            for (const key of keysToUpdate) {
+              newData[key] = updatingFields.data[key];
+            }
+            return {
+              updateOne: {
+                filter: { _id: t._id },
+                update: { $set: { data: newData, updatedAt: new Date() } },
+              },
+            };
+          })
+          .toArray();
+
+        if (bulkOps.length > 0) {
+          await this.collection.bulkWrite(bulkOps);
+        }
+      }
     }
 
     return updatedContent;

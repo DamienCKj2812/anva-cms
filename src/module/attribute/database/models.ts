@@ -1,14 +1,17 @@
 import { ObjectId } from "mongodb";
 
+export enum SchemaTypeEnum {
+  PRIMITIVE = "primitive", // string, number, boolean
+  ARRAY = "array",
+}
+
 export enum AttributeTypeEnum {
   STRING = "string",
   NUMBER = "number",
   BOOLEAN = "boolean",
-  ARRAY = "array",
-  OBJECT = "object",
 }
 
-export enum FormatTypeEnum {
+export enum AttributeFormatEnum {
   DATE_TIME = "date-time",
   DATE = "date",
   TIME = "time",
@@ -25,18 +28,19 @@ export interface ValidationRules {
 }
 
 export interface Attribute {
-  _id?: ObjectId;
+  _id: ObjectId;
   contentCollectionId: ObjectId;
   key: string; // JSON Schema "property name"
   label: string; // Human-friendly label for UI
-  type: AttributeTypeEnum; // AJV Basic type
-  format?: FormatTypeEnum; // JSON Schema "format"
+  schemaType: SchemaTypeEnum;
+  attributeType: AttributeTypeEnum;
+  attributeFormat?: AttributeFormatEnum;
   required: boolean;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
   position: number;
-  inheritDefault: boolean;
+  inheritDefault?: boolean;
   createdBy: ObjectId;
   createdAt: Date;
   updatedAt: Date | null;
@@ -44,7 +48,6 @@ export interface Attribute {
 
 export interface UpdateAttributeData {
   label?: string;
-  format?: FormatTypeEnum;
   required?: boolean;
   inheritDefault?: boolean;
   defaultValue?: any;
@@ -56,10 +59,11 @@ export type CreateAttributeData = {
   contentCollectionId: string; // Accept string, convert to ObjectId later
   key: string;
   label: string;
-  type: AttributeTypeEnum;
+  schemaType: SchemaTypeEnum;
+  attributeType: AttributeTypeEnum;
+  attributeFormat?: AttributeFormatEnum;
   required: boolean;
   inheritDefault: boolean;
-  format?: FormatTypeEnum;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;

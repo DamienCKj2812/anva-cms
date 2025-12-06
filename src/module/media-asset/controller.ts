@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { successResponse } from "../../utils/helper.response";
 import { authenticate } from "../../middleware/auth";
 import { AppContext } from "../../utils/helper.context";
-import { BadRequestError } from "../../utils/helper.errors";
+import { BadRequestError, NotFoundError } from "../../utils/helper.errors";
 import { getCurrentUserId } from "../../utils/helper.auth";
 import FileUploaderGCSService from "../../utils/helper.fileUploadGCSService";
 import { ObjectId } from "mongodb";
@@ -23,9 +23,7 @@ const mediaAssetController = (context: AppContext) => {
       if (tenantId) {
         filter.tenantId = new ObjectId(tenantId);
       }
-      filter.parentId = parentId
-        ? new ObjectId(parentId)
-        : null;
+      filter.parentId = parentId ? new ObjectId(parentId) : null;
       const contents = await mediaAssetService.findMany(filter);
       res.status(200).json(successResponse(contents));
     } catch (err) {
@@ -33,6 +31,37 @@ const mediaAssetController = (context: AppContext) => {
     }
   });
 
+  router.post("/get-batch", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { ids } = req.body;
+      const { filter } = req.query as { filter?: string };
+      if (!Array.isArray(ids)) {
+        throw new NotFoundError("'ids' must be provided and must be an array");
+      }
+      let mongoFilter: any = {};
+      switch (filter) {
+        case "byId":
+          mongoFilter = {
+            _id: { $in: ids.map((i) => new ObjectId(i)) },
+          };
+          break;
+        case "byUrl":
+          mongoFilter = {
+            url: { $in: ids },
+          };
+          break;
+        default:
+          throw new NotFoundError("Please provide ?filter=byId or ?filter=byUrl");
+      }
+      const mediaAssets = await mediaAssetService.findMany(mongoFilter);
+      if (!mediaAssets || mediaAssets.length === 0) {
+        throw new NotFoundError("Media assets not found");
+      }
+      res.status(200).json(successResponse(mediaAssets));
+    } catch (err) {
+      next(err);
+    }
+  });
 
   router.post("/:tenantId/:googleProjectId/upload-images", async (req, res, next) => {
     try {

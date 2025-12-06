@@ -19,6 +19,7 @@ export enum AttributeFormatEnum {
   MEDIA_URI = "media-uri", // custom format
 }
 
+
 export interface ValidationRules {
   minLength?: number; // For strings
   maxLength?: number; // For strings
@@ -28,7 +29,7 @@ export interface ValidationRules {
 }
 
 export interface Attribute {
-  _id: ObjectId;
+  _id?: ObjectId;
   contentCollectionId: ObjectId;
   key: string; // JSON Schema "property name"
   label: string; // Human-friendly label for UI
@@ -39,8 +40,8 @@ export interface Attribute {
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
+  inheritDefault: boolean;
   position: number;
-  inheritDefault?: boolean;
   createdBy: ObjectId;
   createdAt: Date;
   updatedAt: Date | null;
@@ -49,24 +50,25 @@ export interface Attribute {
 export interface UpdateAttributeData {
   label?: string;
   required?: boolean;
-  inheritDefault?: boolean;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
+  inheritDefault?: boolean;
 }
 
 export type CreateAttributeData = {
+  label: string;
   contentCollectionId: string; // Accept string, convert to ObjectId later
   key: string;
-  label: string;
   schemaType: SchemaTypeEnum;
   attributeType: AttributeTypeEnum;
   attributeFormat?: AttributeFormatEnum;
   required: boolean;
-  inheritDefault: boolean;
+  format?: AttributeFormatEnum;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
+  inheritDefault: boolean;
 };
 
 export interface DeleteAttributeResponse {

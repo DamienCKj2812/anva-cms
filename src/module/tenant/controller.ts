@@ -61,7 +61,7 @@ const tenantController = (context: AppContext) => {
       } catch (err) {
         next(err);
       }
-    }
+    },
   );
 
   return router;

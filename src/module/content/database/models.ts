@@ -11,6 +11,7 @@ export interface Content {
   _id: ObjectId;
   tenantId: ObjectId;
   contentCollectionId: ObjectId;
+  data: any; // Shared fields (non-translatable)
   status: ContentStatusEnum;
   createdAt: Date;
   updatedAt: Date | null;
@@ -23,11 +24,11 @@ export interface ContentCount {
 }
 
 export interface CreateContentData {
-  contentCollectionId: string;
   status: string;
-  contentTranslationDto: CreateContentTranslationData;
+  data: any;
 }
 
 export interface UpdateContentData {
   status?: string;
+  data?: any;
 }

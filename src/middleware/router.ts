@@ -9,6 +9,7 @@ import mediaAssetController from "../module/media-asset/controller";
 import tenantLocaleController from "../module/tenant-locale/controller";
 import folderController from "../module/folder/controller";
 import contentTranslationController from "../module/content-translation/controller";
+import attributeComponentController from "../module/attribute-component/controller";
 
 const createRouter = (context: any) => {
   const router = Router();
@@ -19,6 +20,7 @@ const createRouter = (context: any) => {
   router.use("/tenant-locale", tenantLocaleController(context));
   router.use("/content-collection", contentCollectionController(context));
   router.use("/attribute", attributeController(context));
+  router.use("/attribute-component", attributeComponentController(context));
   router.use("/content", contentController(context));
   router.use("/content-translation", contentTranslationController(context));
   router.use("/media-asset", mediaAssetController(context));

@@ -16,10 +16,29 @@ const attributeController = (context: AppContext) => {
 
   router.use(authenticate(context));
 
-  router.post("/create", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:contentCollectionId/create-primitive", async (req: Request, res: Response, next: NextFunction) => {
     try {
       console.log("Creating attribute with data:", req.body);
-      const attribute = await attributeService.create(req.body);
+      const contentCollection = await contentCollectionService.findOne({ _id: new ObjectId(req.params.contentCollectionId) });
+      if (!contentCollection) {
+        throw new NotFoundError("content collection not found");
+      }
+      const attribute = await attributeService.createPrimitiveAttribute(req.body, contentCollection);
+      res.status(201).json(successResponse(attribute));
+    } catch (err) {
+      await cleanupUploadedFiles(req);
+      next(err);
+    }
+  });
+
+  router.post("/:contentCollectionId/create-component", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      console.log("Creating attribute with data:", req.body);
+      const contentCollection = await contentCollectionService.findOne({ _id: new ObjectId(req.params.contentCollectionId) });
+      if (!contentCollection) {
+        throw new NotFoundError("content collection not found");
+      }
+      const attribute = await attributeService.createComponentAttribute(req.body, contentCollection);
       res.status(201).json(successResponse(attribute));
     } catch (err) {
       await cleanupUploadedFiles(req);
@@ -69,7 +88,7 @@ const attributeController = (context: AppContext) => {
         await cleanupUploadedFiles(req);
         next(err);
       }
-    }
+    },
   );
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {

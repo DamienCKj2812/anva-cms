@@ -1,8 +1,9 @@
 import { ObjectId } from "mongodb";
 
-export enum SchemaTypeEnum {
-  PRIMITIVE = "primitive", // string, number, boolean
-  ARRAY = "array",
+export enum AttributeKindEnum {
+  PRIMITIVE = "primitive",
+  COMPONENT = "component",
+  DYNAMIC_ZONE = "dynamic-zone",
 }
 
 export enum AttributeTypeEnum {
@@ -19,7 +20,6 @@ export enum AttributeFormatEnum {
   MEDIA_URI = "media-uri", // custom format
 }
 
-
 export interface ValidationRules {
   minLength?: number; // For strings
   maxLength?: number; // For strings
@@ -29,47 +29,66 @@ export interface ValidationRules {
 }
 
 export interface Attribute {
-  _id?: ObjectId;
+  _id: ObjectId;
   contentCollectionId: ObjectId;
-  key: string; // JSON Schema "property name"
-  label: string; // Human-friendly label for UI
-  schemaType: SchemaTypeEnum;
-  attributeType: AttributeTypeEnum;
+  key: string;
+  label: string;
+  attributeKind: AttributeKindEnum;
+  // single component reference (for COMPONENT)
+  componentRefId?: ObjectId;
+  // multiple component references (for DYNAMIC_ZONE)
+  componentRefIds?: ObjectId[];
+  attributeType?: AttributeTypeEnum;
   attributeFormat?: AttributeFormatEnum;
   required: boolean;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
-  inheritDefault: boolean;
+  localizable: boolean;
   position: number;
   createdBy: ObjectId;
   createdAt: Date;
   updatedAt: Date | null;
 }
 
-export interface UpdateAttributeData {
-  label?: string;
-  required?: boolean;
-  defaultValue?: any;
-  enumValues?: string[];
-  validation?: ValidationRules;
-  inheritDefault?: boolean;
+interface CreateAttributeBaseDTO {
+  key: string;
+  label: string;
+  required: boolean;
 }
 
-export type CreateAttributeData = {
-  label: string;
-  contentCollectionId: string; // Accept string, convert to ObjectId later
-  key: string;
-  schemaType: SchemaTypeEnum;
+export interface CreatePrimitiveAttributeDTO extends CreateAttributeBaseDTO {
   attributeType: AttributeTypeEnum;
+  localizable: boolean;
   attributeFormat?: AttributeFormatEnum;
-  required: boolean;
-  format?: AttributeFormatEnum;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
-  inheritDefault: boolean;
-};
+}
+
+// used when the user add a component as field, just a placeholder, hence no need to store the value
+export interface CreateComponentAttributeDTO extends CreateAttributeBaseDTO {
+  componentRefId: string;
+}
+
+// used when the user add a dynamic as field, just a placeholder, hence no need to store the value
+export interface CreateDynamicZoneAttributeDTO extends CreateAttributeBaseDTO {
+  componentRefIds: string[];
+}
+
+export interface UpdateAttributeBaseDto {
+  label?: string;
+  required?: boolean;
+}
+
+export interface UpdatePrimitiveAttributeDTO extends UpdateAttributeBaseDto {
+  // attributeType: AttributeTypeEnum;  Not supported yet
+  localizable?: boolean;
+  // attributeFormat?: AttributeFormatEnum; Not supported yet
+  defaultValue?: any;
+  enumValues?: string[];
+  // validation?: ValidationRules; Not supported yet
+}
 
 export interface DeleteAttributeResponse {
   status: "success" | "failed";

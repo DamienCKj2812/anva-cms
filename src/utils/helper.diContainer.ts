@@ -1,3 +1,4 @@
+import AttributeComponentService from "../module/attribute-component/database/services";
 import AttributeService from "../module/attribute/database/services";
 import AuthService from "../module/auth/database/services";
 import ContentCollectionService from "../module/content-collection/database/services";
@@ -17,6 +18,7 @@ export type ServiceMap = {
   TenantLocaleService: TenantLocaleService;
   ContentCollectionService: ContentCollectionService;
   AttributeService: AttributeService;
+  AttributeComponentService: AttributeComponentService;
   ContentService: ContentService;
   ContentTranslationService: ContentTranslationService;
   MediaAssetService: MediaAssetService;
@@ -48,6 +50,7 @@ export async function createDIContainer(context: AppContext) {
   const tenantLocaleService = new TenantLocaleService(context);
   const contentCollectionService = new ContentCollectionService(context);
   const attributeService = new AttributeService(context);
+  const attributeComponentService = new AttributeComponentService(context);
   const contentService = new ContentService(context);
   const contentTranslation = new ContentTranslationService(context);
   const mediaAssetService = new MediaAssetService(context);
@@ -60,6 +63,7 @@ export async function createDIContainer(context: AppContext) {
   container.register("TenantLocaleService", tenantLocaleService);
   container.register("ContentCollectionService", contentCollectionService);
   container.register("AttributeService", attributeService);
+  container.register("AttributeComponentService", attributeComponentService);
   container.register("ContentService", contentService);
   container.register("ContentTranslationService", contentTranslation);
   container.register("MediaAssetService", mediaAssetService);
@@ -72,8 +76,9 @@ export async function createDIContainer(context: AppContext) {
   tenantLocaleService.init();
   contentCollectionService.init();
   attributeService.init();
+  attributeComponentService.init();
   contentService.init();
-  contentTranslation.init()
+  contentTranslation.init();
   mediaAssetService.init();
   folderService.init();
 }

@@ -6,10 +6,11 @@ import { filterFields, WithMetaData } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { ContentCollection, CreateContentCollectionData, DeleteContentCollectionResponse, UpdateContentCollectionData } from "./models";
 import TenantService from "../../tenant/database/services";
-import { Attribute, AttributeTypeEnum, SchemaTypeEnum } from "../../attribute/database/models";
+import { Attribute, AttributeKindEnum } from "../../attribute/database/models";
 import { BaseService } from "../../core/base-service";
 import AttributeService from "../../attribute/database/services";
 import ContentService from "../../content/database/services";
+import AttributeComponentService from "../../attribute-component/database/services";
 
 class ContentCollectionService extends BaseService {
   private db: Db;
@@ -19,6 +20,7 @@ class ContentCollectionService extends BaseService {
   private tenantService: TenantService;
   private attributeService: AttributeService;
   private contentService: ContentService;
+  private attributeComponentService: AttributeComponentService;
 
   constructor(context: AppContext) {
     super(context);
@@ -30,6 +32,7 @@ class ContentCollectionService extends BaseService {
     this.tenantService = this.getService("TenantService");
     this.attributeService = this.getService("AttributeService");
     this.contentService = this.getService("ContentService");
+    this.attributeComponentService = this.getService("AttributeComponentService");
   }
 
   private async createValidation(data: CreateContentCollectionData): Promise<CreateContentCollectionData> {
@@ -77,6 +80,7 @@ class ContentCollectionService extends BaseService {
 
     console.log("Creating :", name);
     const newContentCollection: ContentCollection = {
+      _id: new ObjectId(),
       tenantId: new ObjectId(tenantId),
       name: name.trim(),
       displayName: displayName.trim(),
@@ -85,8 +89,8 @@ class ContentCollectionService extends BaseService {
       createdBy,
     };
 
-    const result = await this.collection.insertOne(newContentCollection);
-    return { _id: result.insertedId, ...newContentCollection };
+    await this.collection.insertOne(newContentCollection);
+    return newContentCollection;
   }
 
   async getAll(): Promise<(ContentCollection & { contentCount: number })[]> {
@@ -241,6 +245,7 @@ class ContentCollectionService extends BaseService {
       throw new NotFoundError("Content collection not found");
     }
 
+    // Base schema
     const schema = contentCollection.schema ?? {
       type: "object",
       properties: {},
@@ -248,16 +253,19 @@ class ContentCollectionService extends BaseService {
       additionalProperties: false,
     };
 
-    if (!schema.properties) schema.properties = {};
-    if (!schema.required) schema.required = [];
-    if (schema.additionalProperties === undefined) schema.additionalProperties = false;
-    if (schema.type !== "object") schema.type = "object";
+    // Ensure base structure
+    schema.type = "object";
+    schema.properties ||= {};
+    schema.required ||= [];
+    if (schema.additionalProperties === undefined) {
+      schema.additionalProperties = false;
+    }
 
-    // Build AJV property from attribute
-    let property: any;
+    let property: any = null;
 
-    if (attribute.schemaType === SchemaTypeEnum.PRIMITIVE) {
-      property = { type: attribute.attributeType.toLowerCase() };
+    // PRIMITIVE ATTRIBUTE
+    if (attribute.attributeKind === AttributeKindEnum.PRIMITIVE) {
+      property = { type: attribute.attributeType?.toLowerCase() };
 
       if (attribute.attributeFormat) property.format = attribute.attributeFormat;
 
@@ -270,32 +278,34 @@ class ContentCollectionService extends BaseService {
         if (v.pattern !== undefined) property.pattern = v.pattern;
       }
 
-      if (attribute.enumValues && attribute.enumValues.length > 0) property.enum = attribute.enumValues;
+      if (attribute.enumValues?.length) property.enum = attribute.enumValues;
       if (attribute.defaultValue !== undefined) property.default = attribute.defaultValue;
-    } else if (attribute.schemaType === SchemaTypeEnum.ARRAY) {
-      property = {
-        type: "array",
-        items: { type: attribute.attributeType.toLowerCase() }, // item type
-      };
 
-      // Item-level validation
-      if (attribute.attributeType === AttributeTypeEnum.STRING && attribute.attributeFormat) {
-        property.items.format = attribute.attributeFormat;
-      }
-
-      if (attribute.enumValues && attribute.enumValues.length > 0) {
-        property.items.enum = attribute.enumValues;
-      }
-
-      // Array-level validation using validationRules (optional)
-      if (attribute.validation) {
-        const v = attribute.validation;
-        if (v.minLength !== undefined) property.minItems = v.minLength;
-        if (v.maxLength !== undefined) property.maxItems = v.maxLength;
-      }
+      // Add localizable flag
+      property.localizable = attribute.localizable;
     }
 
-    // Add property to schema
+    // COMPONENT ATTRIBUTE
+    else if (attribute.attributeKind === AttributeKindEnum.COMPONENT) {
+      if (!attribute.componentRefId) {
+        throw new ValidationError("componentRefId is required for component attribute");
+      }
+
+      const component = await this.attributeComponentService.findOne({ _id: attribute.componentRefId });
+      if (!component) {
+        throw new NotFoundError("Component not found");
+      }
+
+      // POINTER ONLY — DO NOT RESOLVE SCHEMA HERE
+      property = {
+        type: "component",
+        componentRefId: attribute.componentRefId,
+        repeatable: component.repeatable,
+        localizable: component.localizable, // mark component-level localization
+      };
+    }
+
+    // Assign property to schema
     schema.properties[attribute.key] = property;
 
     // Add to required if needed
@@ -303,7 +313,7 @@ class ContentCollectionService extends BaseService {
       schema.required.push(attribute.key);
     }
 
-    // Update the contentCollection with new schema
+    // Update the content collection
     const updated = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       {
@@ -324,33 +334,71 @@ class ContentCollectionService extends BaseService {
     const contentCollection = await this.getById(oldAttribute.contentCollectionId.toString());
     if (!contentCollection) throw new NotFoundError("Content collection not found");
 
-    const schema = contentCollection.schema || { type: "object", properties: {}, required: [], additionalProperties: false };
-
-    const property: any = {
-      type: oldAttribute.attributeType.toLowerCase(),
+    const schema = contentCollection.schema ?? {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
     };
 
-    if (attribute.attributeFormat) property.format = attribute.attributeFormat;
-    if (attribute.validation) {
-      if (attribute.validation.minLength !== undefined) property.minLength = attribute.validation.minLength;
-      if (attribute.validation.maxLength !== undefined) property.maxLength = attribute.validation.maxLength;
-      if (attribute.validation.minimum !== undefined) property.minimum = attribute.validation.minimum;
-      if (attribute.validation.maximum !== undefined) property.maximum = attribute.validation.maximum;
-      if (attribute.validation.pattern !== undefined) property.pattern = attribute.validation.pattern;
-    }
-    if (attribute.enumValues && attribute.enumValues.length > 0) property.enum = attribute.enumValues;
-    if (attribute.defaultValue !== undefined) property.default = attribute.defaultValue;
+    schema.type = "object";
+    schema.properties ||= {};
+    schema.required ||= [];
+    if (schema.additionalProperties === undefined) schema.additionalProperties = false;
 
+    let property: any;
+
+    switch (attribute.attributeKind) {
+      case AttributeKindEnum.PRIMITIVE:
+        property = { type: attribute.attributeType?.toLowerCase() };
+
+        if (attribute.attributeFormat) property.format = attribute.attributeFormat;
+
+        if (attribute.validation) {
+          const v = attribute.validation;
+          if (v.minLength !== undefined) property.minLength = v.minLength;
+          if (v.maxLength !== undefined) property.maxLength = v.maxLength;
+          if (v.minimum !== undefined) property.minimum = v.minimum;
+          if (v.maximum !== undefined) property.maximum = v.maximum;
+          if (v.pattern !== undefined) property.pattern = v.pattern;
+        }
+
+        if (attribute.enumValues?.length) property.enum = attribute.enumValues;
+        if (attribute.defaultValue !== undefined) property.default = attribute.defaultValue;
+
+        // Add localizable flag
+        property.localizable = attribute.localizable;
+        break;
+
+      case AttributeKindEnum.COMPONENT:
+        if (!attribute.componentRefId) throw new ValidationError("componentRefId is required for component attribute");
+
+        const component = await this.attributeComponentService.findOne({ _id: attribute.componentRefId });
+        if (!component) throw new NotFoundError("Component not found");
+
+        // Store only pointer
+        property = {
+          type: "component",
+          componentRefId: attribute.componentRefId,
+          repeatable: component.repeatable,
+          localizable: component.localizable, // mark component-level localization
+        };
+        break;
+
+      default:
+        throw new ValidationError("Unsupported attribute kind");
+    }
+
+    // Update property in schema
     schema.properties[oldAttribute.key] = property;
 
-    const requiredSet = new Set(schema.required || []);
-    if (attribute.required) {
-      requiredSet.add(oldAttribute.key);
-    } else {
-      requiredSet.delete(oldAttribute.key);
-    }
+    // Update required array
+    const requiredSet = new Set(schema.required);
+    if (attribute.required) requiredSet.add(oldAttribute.key);
+    else requiredSet.delete(oldAttribute.key);
     schema.required = Array.from(requiredSet);
 
+    // Save updated schema
     const updated = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(oldAttribute.contentCollectionId) },
       { $set: { schema, updatedAt: new Date() } },

@@ -3,17 +3,23 @@ import { successResponse } from "../../utils/helper.response";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
+import { ObjectId } from "mongodb";
+import { NotFoundError } from "../../utils/helper.errors";
 
 const contentController = (context: AppContext) => {
   const router = Router();
   const contentService = context.diContainer!.get("ContentService");
+  const contentCollectionService = context.diContainer!.get("ContentCollectionService");
 
   router.use(authenticate(context));
 
-  router.post("/create", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:contentCollectionId/create", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      console.log("Creating content with data:", req.body);
-      const content = await contentService.create(req.body);
+      const contentCollection = await contentCollectionService.findOne({ _id: new ObjectId(req.params.contentCollectionId) });
+      if (!contentCollection) {
+        throw new NotFoundError("content collection not found");
+      }
+      const content = await contentService.create(req.body, contentCollection);
       res.status(201).json(successResponse(content));
     } catch (err) {
       await cleanupUploadedFiles(req);

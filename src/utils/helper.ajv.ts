@@ -9,15 +9,8 @@ addFormats(ajv);
 ajv.addFormat("media-uri", {
   type: "string",
   validate: (value: string) => {
-    return (
-      typeof value === "string" &&
-      (
-        value.startsWith("/uploads/") ||
-        value.startsWith("http://") ||
-        value.startsWith("https://")
-      )
-    );
-  }
+    return typeof value === "string" && (value.startsWith("/uploads/") || value.startsWith("http://") || value.startsWith("https://"));
+  },
 });
 
 export default ajv;

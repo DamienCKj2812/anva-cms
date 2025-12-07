@@ -84,15 +84,15 @@ const contentTranslationController = (context: AppContext) => {
     }
   });
 
-  router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const updatedContentTranslation = await contentTranslationService.update(req.params.id, req.body);
-      res.status(200).json(successResponse(updatedContentTranslation));
-    } catch (err) {
-      await cleanupUploadedFiles(req);
-      next(err);
-    }
-  });
+  // router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
+  // try {
+  //    const updatedContentTranslation = await contentTranslationService.update(req.params.id, req.body);
+  //   res.status(200).json(successResponse(updatedContentTranslation));
+  // } catch (err) {
+  //   await cleanupUploadedFiles(req);
+  //  next(err);
+  //}
+  //});
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {

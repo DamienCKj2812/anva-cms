@@ -2,14 +2,14 @@ import { ObjectId } from "mongodb";
 import { CreateContentTranslationData } from "../../content-translation/database/models";
 
 export interface ContentCollctionSchema {
-  type: string,
-  properties: Record<string, any>
-  required: string[],
-  additionalProperties: boolean
+  type: string;
+  properties: Record<string, any>;
+  required: string[];
+  additionalProperties: boolean;
 }
 
 export interface ContentCollection {
-  _id?: ObjectId;
+  _id: ObjectId;
   tenantId: ObjectId;
   name: string;
   displayName: string;

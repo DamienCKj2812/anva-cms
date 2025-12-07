@@ -15,6 +15,7 @@ import TenantLocaleService from "../../tenant-locale/database/services";
 import { Content, ContentStatusEnum } from "../../content/database/models";
 import AttributeService from "../../attribute/database/services";
 import { TenantLocale } from "../../tenant-locale/database/models";
+import ContentService from "../../content/database/services";
 
 class ContentTranslationService extends BaseService {
   private db: Db;
@@ -24,6 +25,7 @@ class ContentTranslationService extends BaseService {
   private contentCollectionService: ContentCollectionService;
   private tenantLocaleService: TenantLocaleService;
   private attributeService: AttributeService;
+  private contentService: ContentService;
 
   constructor(context: AppContext) {
     super(context);
@@ -35,61 +37,41 @@ class ContentTranslationService extends BaseService {
     this.contentCollectionService = this.getService("ContentCollectionService");
     this.tenantLocaleService = this.getService("TenantLocaleService");
     this.attributeService = this.getService("AttributeService");
+    this.contentService = this.getService("ContentService");
   }
 
   private async createValidation(
     createData: CreateContentTranslationData,
-    contentCollection: ContentCollection,
     content: Content,
+    contentCollection: ContentCollection,
+    fullSchema: any,
   ): Promise<{ validatedData: CreateContentTranslationData }> {
-    const { data, status, locale } = createData;
+    const { data, status } = createData;
 
     if (!data) throw new ValidationError('"data" field is required');
     if (!status) throw new ValidationError('"status" field is required');
-    if (!locale) throw new ValidationError('"locale" field is required');
 
-    const mergedData = { ...data };
-    const defaultTenantLocale = await this.tenantLocaleService.findOne({
-      tenantId: contentCollection.tenantId,
-      isDefault: true,
-    });
-    if (!defaultTenantLocale) {
-      throw new ValidationError("default tenant locale not found");
+    if (!fullSchema) {
+      throw new Error("Content collection schema is missing");
     }
-    if (locale !== defaultTenantLocale.locale) {
-      const inheritAttributes = await this.attributeService.findMany({
-        contentCollectionId: contentCollection._id,
-        inheritDefault: true,
-      });
 
-      if (inheritAttributes.length > 0) {
-        const defaultContentTranslation = await this.findOne({
-          contentId: content._id,
-          locale: defaultTenantLocale.locale,
-        });
-        if (!defaultContentTranslation) {
-          throw new ValidationError("default content translation not found");
-        }
-
-        for (const attr of inheritAttributes) {
-          const key = attr.key;
-
-          if (!(key in mergedData) || mergedData[key]?.useDefault === true) {
-            mergedData[key] = defaultContentTranslation.data[key];
-          }
-        }
-      }
+    // Use mergeTranslatableFields to combine shared and translation safely
+    let mergedData: any;
+    try {
+      mergedData = this.contentService.mergeTranslatableFields(content.data, data, fullSchema);
+    } catch (err) {
+      throw new ValidationError(`Failed to merge translation: ${(err as Error).message}`);
     }
+
+    // Validate merged data against full schema
     let validate: ValidateFunction;
     try {
-      if (!contentCollection.schema) {
-        throw new Error("Content collection schema is missing");
-      }
-      validate = ajv.compile(contentCollection.schema);
+      validate = ajv.compile(fullSchema);
     } catch (err) {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
     }
 
+    console.dir({ mergedData }, { depth: null, colors: true });
     if (!validate(mergedData)) {
       const errorText = ajv.errorsText(validate.errors, { separator: ", " });
       throw new ValidationError(`Data validation failed: ${errorText}`);
@@ -99,38 +81,27 @@ class ContentTranslationService extends BaseService {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
     }
 
-    const tenantLocale = await this.tenantLocaleService.findOne({
-      tenantId: contentCollection.tenantId,
-      locale,
-    });
-
-    if (!tenantLocale) {
-      throw new ValidationError(`current ${locale} is not supported`);
-    }
-
-    const existingTranslation = await this.collection.findOne({
-      contentId: content._id,
-      locale,
-    });
-
-    if (existingTranslation) {
-      throw new ValidationError(`current ${locale} is already created`);
-    }
-
     return { validatedData: { ...createData, data: mergedData } };
   }
 
-  async create(data: CreateContentTranslationData, contentCollection: ContentCollection, content: Content): Promise<ContentTranslation> {
-    const { validatedData } = await this.createValidation(data, contentCollection, content);
+  async create(
+    data: CreateContentTranslationData,
+    contentCollection: ContentCollection,
+    content: Content,
+    tenantLocale: TenantLocale,
+    fullSchema: any,
+  ): Promise<ContentTranslation> {
+    const { validatedData } = await this.createValidation(data, content, contentCollection, fullSchema);
     const userId = getCurrentUserId(this.context);
+
     const newContent: ContentTranslation = {
       _id: new ObjectId(),
-      tenantId: contentCollection.tenantId,
-      contentCollectionId: content.contentCollectionId,
+      tenantLocaleId: tenantLocale._id,
       contentId: content._id,
-      locale: validatedData.locale,
-      data: validatedData.data,
+      locale: tenantLocale.locale,
+      data: validatedData.data, // safely merged
       status: validatedData.status as ContentStatusEnum,
+      isDefault: tenantLocale.isDefault,
       createdAt: new Date(),
       updatedAt: null,
       createdBy: userId,
@@ -147,24 +118,10 @@ class ContentTranslationService extends BaseService {
     sort,
   }: {
     match: Partial<ContentTranslation>;
-    lookup?: ("contentCollection" | "content")[];
+    lookup?: "content"[];
     sort?: Record<string, 1 | -1>;
   }): Promise<FullContentTranslation[]> {
     const pipeline: any[] = [{ $match: match }];
-
-    if (lookup?.includes("contentCollection")) {
-      pipeline.push(
-        {
-          $lookup: {
-            from: "content-collections",
-            localField: "contentCollectionId",
-            foreignField: "_id",
-            as: "contentCollection",
-          },
-        },
-        { $unwind: { path: "$contentCollection", preserveNullAndEmptyArrays: true } },
-      );
-    }
 
     if (lookup?.includes("content")) {
       pipeline.push(
@@ -212,82 +169,79 @@ class ContentTranslationService extends BaseService {
   }
 
   private async updateValidation(
-    contentTranslationId: string,
+    content: Content,
+    contentTranslation: ContentTranslation,
+    contentCollection: ContentCollection,
     updateData: UpdateContentTranslationData,
   ): Promise<{
-    contentTranslation: ContentTranslation;
-    contentCollection: ContentCollection;
     validatedData: UpdateContentTranslationData;
-    defaultTenantLocale: TenantLocale;
   }> {
     const { data, status } = updateData;
-    if (!contentTranslationId) {
-      throw new BadRequestError("Missing content Id");
-    }
-    const contentTranslation = await this.getById(contentTranslationId);
-    if (!contentTranslation) {
-      throw new NotFoundError("Content not found");
-    }
-    const contentCollection = await this.contentCollectionService.getById(contentTranslation.contentCollectionId.toString());
-    if (!contentCollection) {
-      throw new NotFoundError("Content collection not found");
-    }
+
     if (!("data" in updateData) && !("status" in updateData)) {
       throw new BadRequestError("No valid fields provided for update");
     }
-    if (!contentCollection.schema) {
-      throw new Error("Content collection schema is missing");
-    }
-    const defaultTenantLocale = await this.tenantLocaleService.findOne({
-      tenantId: contentCollection.tenantId,
-      isDefault: true,
-    });
-    if (!defaultTenantLocale) {
-      throw new ValidationError("default tenant locale not found");
-    }
-    const isDefaultLocale = contentTranslation.locale === defaultTenantLocale.locale;
-    if (data !== undefined) {
-      const existingData = contentTranslation.data || {};
-      const newData = typeof data === "string" ? JSON.parse(data) : data;
-      const mergedData: Record<string, any> = { ...existingData };
-      if (isDefaultLocale) {
-        Object.assign(mergedData, newData);
-      } else {
-        const updatableAttributes = await this.attributeService.findMany({
-          contentCollectionId: contentCollection._id,
-          inheritDefault: false,
-        });
-        const updatableKeys = updatableAttributes.map((attr) => attr.key);
 
-        for (const key of updatableKeys) {
-          if (key in newData) mergedData[key] = newData[key];
-        }
+    if (data !== undefined) {
+      const nonTranslatableFound = await this.attributeService.findMany({
+        contentCollectionId: content.contentCollectionId,
+        key: { $in: Object.keys(data) },
+        localizable: false,
+      });
+
+      if (nonTranslatableFound.length > 0) {
+        throw new ValidationError("Some fields are non-translatable");
       }
+
+      let mergedData: Record<string, any>;
+      const existingData = contentTranslation.data || {};
+      mergedData = { ...existingData };
+
+      // Only update keys provided in `data`
+      for (const key of Object.keys(data)) {
+        mergedData[key] = data[key];
+      }
+
+      // Merge with shared fields for AJV validation
+      const fullData = { ...content.data, ...mergedData };
+
+      // 3️⃣ Validate merged data against AJV schema
+      if (!contentCollection.schema) {
+        throw new Error("Content collection schema is missing");
+      }
+
       let validate: ValidateFunction;
       try {
         validate = ajv.compile(contentCollection.schema);
       } catch (err) {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
-      if (!validate(mergedData)) {
+
+      if (!validate(fullData)) {
         const errorText = ajv.errorsText(validate.errors, { separator: ", " });
         throw new ValidationError(`Data validation failed: ${errorText}`);
       }
+
       updateData.data = mergedData;
     }
+
+    // 5️⃣ Validate status if provided
     if (status !== undefined && !Object.values(ContentStatusEnum).includes(status as ContentStatusEnum)) {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
     }
 
-    return { contentTranslation, contentCollection, validatedData: updateData, defaultTenantLocale };
+    return { validatedData: updateData };
   }
 
-  async update(id: string, data: UpdateContentTranslationData): Promise<ContentTranslation> {
-    validateObjectId(id);
-
+  async update(
+    content: Content,
+    contentTranslation: ContentTranslation,
+    contentCollection: ContentCollection,
+    data: UpdateContentTranslationData,
+  ): Promise<ContentTranslation> {
     const filteredUpdateData = filterFields(data, ContentTranslationService.ALLOWED_UPDATE_FIELDS);
 
-    const { contentTranslation, contentCollection, validatedData, defaultTenantLocale } = await this.updateValidation(id, filteredUpdateData);
+    const { validatedData } = await this.updateValidation(content, contentTranslation, contentCollection, data);
     console.log({ validatedData: validatedData });
 
     const updatingFields: Partial<ContentTranslation> = {
@@ -297,46 +251,13 @@ class ContentTranslationService extends BaseService {
     };
 
     const updatedContent = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
+      { _id: contentTranslation._id },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
       { returnDocument: "after" },
     );
 
     if (!updatedContent) {
       throw new NotFoundError("failed to update content");
-    }
-
-    if (contentTranslation.locale === defaultTenantLocale.locale) {
-      const inheritAttributes = await this.attributeService.findMany({
-        contentCollectionId: contentCollection._id,
-        inheritDefault: true,
-      });
-
-      if (inheritAttributes.length > 0) {
-        const keysToUpdate = inheritAttributes.map((attr) => attr.key);
-        const bulkOps = await this.collection
-          .find({
-            contentId: contentTranslation.contentId,
-            locale: { $ne: defaultTenantLocale.locale },
-          })
-          .map((t) => {
-            const newData = { ...t.data };
-            for (const key of keysToUpdate) {
-              newData[key] = updatingFields.data[key];
-            }
-            return {
-              updateOne: {
-                filter: { _id: t._id },
-                update: { $set: { data: newData, updatedAt: new Date() } },
-              },
-            };
-          })
-          .toArray();
-
-        if (bulkOps.length > 0) {
-          await this.collection.bulkWrite(bulkOps);
-        }
-      }
     }
 
     return updatedContent;

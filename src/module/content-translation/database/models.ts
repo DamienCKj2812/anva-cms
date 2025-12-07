@@ -1,27 +1,25 @@
 import { ObjectId } from "mongodb";
 import { Content, ContentStatusEnum } from "../../content/database/models";
-import { ContentCollection } from "../../content-collection/database/models";
 
 export interface ContentTranslation {
   _id: ObjectId;
-  tenantId: ObjectId;
-  contentCollectionId: ObjectId;
+  tenantLocaleId: ObjectId;
   contentId: ObjectId;
   locale: string;
   data: any;
   status: ContentStatusEnum;
+  isDefault: boolean;
   createdAt: Date;
   updatedAt: Date | null;
   createdBy: ObjectId;
 }
 
 export interface FullContentTranslation extends ContentTranslation {
-  contentCollection?: ContentCollection;
   content?: Content;
 }
 
 export interface CreateContentTranslationData {
-  locale: string;
+  tenantId: string;
   data: any;
   status: string;
 }

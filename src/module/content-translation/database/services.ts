@@ -6,7 +6,7 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { ContentTranslation, CreateContentTranslationData, FullContentTranslation, UpdateContentTranslationData } from "./models";
-import ajv, { preValidateComponentPlaceholders } from "../../../utils/helper.ajv";
+import ajv, { preValidateComponentPlaceholders, recursiveReplace } from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
@@ -181,6 +181,7 @@ class ContentTranslationService extends BaseService {
     validatedData: UpdateContentTranslationData;
   }> {
     const { data, status } = updateData;
+    console.log({ updateData });
 
     if (!("data" in updateData) && !("status" in updateData)) {
       throw new BadRequestError("No valid fields provided for update");
@@ -206,7 +207,7 @@ class ContentTranslationService extends BaseService {
       mergedData = { ...existingData };
 
       // Only update keys provided in `data`
-      mergedData = this.recursiveReplace(mergedData, data);
+      mergedData = recursiveReplace(mergedData, data);
 
       try {
         mergedData = this.contentService.mergeTranslatableFields(content.data, mergedData, fullSchema);
@@ -267,21 +268,6 @@ class ContentTranslationService extends BaseService {
     }
 
     return updatedContent;
-  }
-
-  private recursiveReplace(target: any, source: any): any {
-    if (Array.isArray(source)) {
-      // replace arrays completely
-      return source;
-    } else if (source && typeof source === "object") {
-      target = target || {};
-      for (const key of Object.keys(source)) {
-        target[key] = this.recursiveReplace(target[key], source[key]);
-      }
-      return target;
-    } else {
-      return source;
-    }
   }
 
   async updateMany(

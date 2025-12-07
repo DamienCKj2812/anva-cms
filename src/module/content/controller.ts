@@ -4,12 +4,13 @@ import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
 import { ObjectId } from "mongodb";
-import { NotFoundError } from "../../utils/helper.errors";
+import { BadRequestError, NotFoundError } from "../../utils/helper.errors";
 
 const contentController = (context: AppContext) => {
   const router = Router();
   const contentService = context.diContainer!.get("ContentService");
   const contentCollectionService = context.diContainer!.get("ContentCollectionService");
+  const attributeService = context.diContainer!.get("AttributeService");
 
   router.use(authenticate(context));
 
@@ -19,7 +20,8 @@ const contentController = (context: AppContext) => {
       if (!contentCollection) {
         throw new NotFoundError("content collection not found");
       }
-      const content = await contentService.create(req.body, contentCollection);
+      const fullSchema = await attributeService.getValidationSchema(contentCollection);
+      const content = await contentService.create(req.body, contentCollection, fullSchema);
       res.status(201).json(successResponse(content));
     } catch (err) {
       await cleanupUploadedFiles(req);
@@ -36,9 +38,20 @@ const contentController = (context: AppContext) => {
     }
   });
 
-  router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:contentId/update", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const updatedContent = await contentService.update(req.params.id, req.body);
+      const { contentId } = req.params;
+
+      if (!contentId) throw new BadRequestError('"contentId" field is required');
+
+      const [content] = await Promise.all([contentService.findOne({ _id: new ObjectId(contentId) })]);
+
+      if (!content) throw new NotFoundError("content not found");
+      const contentCollection = await contentCollectionService.findOne({ _id: content.contentCollectionId });
+      if (!contentCollection) throw new NotFoundError("contentCollection not found");
+
+      const fullSchema = await attributeService.getValidationSchema(contentCollection);
+      const updatedContent = await contentService.update(content, req.body, fullSchema);
       res.status(200).json(successResponse(updatedContent));
     } catch (err) {
       await cleanupUploadedFiles(req);

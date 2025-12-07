@@ -47,3 +47,18 @@ export function preValidateComponentPlaceholders(schema: any, path = "data") {
     preValidateComponentPlaceholders(schema.items, `${path}/*`);
   }
 }
+
+export function recursiveReplace(target: any, source: any): any {
+  if (Array.isArray(source)) {
+    // replace arrays completely
+    return source;
+  } else if (source && typeof source === "object") {
+    target = target || {};
+    for (const key of Object.keys(source)) {
+      target[key] = recursiveReplace(target[key], source[key]);
+    }
+    return target;
+  } else {
+    return source;
+  }
+}

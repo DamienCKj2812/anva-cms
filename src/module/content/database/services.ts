@@ -48,7 +48,7 @@ class ContentService extends BaseService {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
     }
     if (contentCollection.type == ContentCollectionTypeEnum.SINGLE) {
-      const existingContent = await this.findOne({ _id: contentCollection._id });
+      const existingContent = await this.findOne({ contentCollectionId: contentCollection._id });
       if (existingContent) throw new ValidationError("Current collection is a single type, cannot create more than one content");
     }
     let validate: ValidateFunction;
@@ -86,6 +86,8 @@ class ContentService extends BaseService {
       updatedAt: null,
       createdBy: userId,
     };
+    console.log({ shared });
+    console.log({ translation });
     await this.collection.insertOne(newContent);
     if (Object.keys(translation).length > 0) {
       try {
@@ -233,50 +235,69 @@ class ContentService extends BaseService {
    * Recursively separates shared vs translatable fields based on the schema
    */
   separateTranslatableFields(data: any, schema: any): { shared: any; translation: any } {
-    const shared: any = {};
-    const translation: any = {};
+    if (!schema) return { shared: data, translation: {} };
 
-    for (const key of Object.keys(data)) {
-      const fieldValue = data[key];
-      const fieldSchema = schema.properties?.[key];
-
-      if (!fieldSchema) {
-        // field not in schema, skip or treat as shared
-        shared[key] = fieldValue;
-        continue;
+    // ARRAY case
+    if (schema.type === "array" && schema.items) {
+      if (!Array.isArray(data)) {
+        return { shared: [], translation: [] };
       }
 
-      if (fieldSchema.type === "component") {
-        if (!fieldValue) continue;
+      const sharedArr: any[] = [];
+      const transArr: any[] = [];
 
-        if (fieldSchema.repeatable) {
-          // array of components
-          const sharedArr: any[] = [];
-          const transArr: any[] = [];
-          for (const item of fieldValue) {
-            const separated = this.separateTranslatableFields(item, fieldSchema.items);
-            sharedArr.push(separated.shared);
-            transArr.push(separated.translation);
-          }
-          shared[key] = sharedArr;
-          translation[key] = transArr;
-        } else {
-          // single component
+      for (const item of data) {
+        const separated = this.separateTranslatableFields(item, schema.items);
+        sharedArr.push(separated.shared);
+        transArr.push(separated.translation);
+      }
+
+      return { shared: sharedArr, translation: transArr };
+    }
+
+    // OBJECT case (component or normal object)
+    if (schema.type === "object") {
+      const shared: any = {};
+      const translation: any = {};
+
+      for (const key of Object.keys(data)) {
+        const fieldValue = data[key];
+        const fieldSchema = schema.properties?.[key];
+
+        if (!fieldSchema) {
+          shared[key] = fieldValue;
+          continue;
+        }
+
+        // nested object component
+        if (fieldSchema.type === "object") {
           const separated = this.separateTranslatableFields(fieldValue, fieldSchema);
           shared[key] = separated.shared;
           translation[key] = separated.translation;
+          continue;
         }
-      } else {
-        // primitive field
+
+        // nested array component
+        if (fieldSchema.type === "array") {
+          const separated = this.separateTranslatableFields(fieldValue, fieldSchema);
+          shared[key] = separated.shared;
+          translation[key] = separated.translation;
+          continue;
+        }
+
+        // primitive
         if (fieldSchema.localizable) {
           translation[key] = fieldValue;
         } else {
           shared[key] = fieldValue;
         }
       }
+
+      return { shared, translation };
     }
 
-    return { shared, translation };
+    // primitive fallback
+    return { shared: data, translation: {} };
   }
 
   mergeTranslatableFields(shared: any, translation: any, schema: any): any {

@@ -105,12 +105,16 @@ class AttributeComponentService extends BaseService {
 
   async addAttribute(attributeDto: CreatePrimitiveAttributeDTO, attributeComponent: AttributeComponent): Promise<AttributeComponent> {
     const newAttribute = await this.attributeService.addAttributeInComponent(attributeDto, attributeComponent);
-    const result = await this.collection.updateOne({ _id: attributeComponent._id }, { $push: { attributes: newAttribute._id } });
-    if (!result.acknowledged || result.modifiedCount === 0) {
-      throw new Error("failed to add attribute");
+    const updatedComponent = await this.collection.findOneAndUpdate(
+      { _id: attributeComponent._id },
+      { $push: { attributes: newAttribute._id } },
+      { returnDocument: "after" }, // returns the updated document
+    );
+    if (!updatedComponent) {
+      throw new Error("Failed to add attribute to component");
     }
     await this.addSchema(attributeComponent._id, newAttribute);
-    return attributeComponent;
+    return updatedComponent;
   }
 
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<AttributeComponent>> {
@@ -215,7 +219,7 @@ class AttributeComponentService extends BaseService {
     }
 
     if (attributeComponent.localizable) {
-      property.localizable = true;
+      property.localizable = attribute.localizable;
     }
 
     targetSchema.properties[attribute.key] = property;

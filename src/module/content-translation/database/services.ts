@@ -94,13 +94,16 @@ class ContentTranslationService extends BaseService {
     const { validatedData } = await this.createValidation(data, content, tenantLocale, contentCollection, fullSchema);
     const userId = getCurrentUserId(this.context);
 
+    const { shared, translation } = this.contentService.separateTranslatableFields(validatedData.data, fullSchema);
+    console.log({ shared });
+
     const newContent: ContentTranslation = {
       _id: new ObjectId(),
       contentCollectionId: contentCollection._id,
       tenantLocaleId: tenantLocale._id,
       contentId: content._id,
       locale: tenantLocale.locale,
-      data: validatedData.data, // safely merged
+      data: translation, // safely merged
       status: validatedData.status as ContentStatusEnum,
       isDefault: tenantLocale.isDefault,
       createdAt: new Date(),
@@ -204,7 +207,7 @@ class ContentTranslationService extends BaseService {
       const existingData = contentTranslation.data || {};
       mergedData = { ...existingData };
 
-      // Only update keys provided in `data`
+      // Only update keys provided in ``
       mergedData = recursiveReplace(mergedData, data);
 
       try {

@@ -38,6 +38,7 @@ export interface Attribute {
   componentRefId?: ObjectId;
   // multiple component references (for DYNAMIC_ZONE)
   componentRefIds?: ObjectId[];
+
   attributeType?: AttributeTypeEnum;
   attributeFormat?: AttributeFormatEnum;
   required: boolean;

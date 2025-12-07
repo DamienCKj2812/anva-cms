@@ -1,26 +1,24 @@
 import { ObjectId } from "mongodb";
-import { CreateContentTranslationData } from "../../content-translation/database/models";
 
-export interface ContentCollctionSchema {
-  type: string;
-  properties: Record<string, any>;
-  required: string[];
-  additionalProperties: boolean;
+export enum ContentCollectionTypeEnum {
+  COLLECTION = "collection",
+  SINGLE = "single",
 }
 
 export interface ContentCollection {
   _id: ObjectId;
   tenantId: ObjectId;
-  name: string;
+  slug: string;
   displayName: string;
-  schema: ContentCollctionSchema | null;
+  type: ContentCollectionTypeEnum;
+  schema: any | null;
   createdAt: Date;
   updatedAt?: Date | null;
   createdBy: ObjectId;
 }
 
 export interface UpdateContentCollectionData {
-  name?: string;
+  slug?: string;
   displayName?: string;
 }
 
@@ -30,6 +28,8 @@ export interface DeleteContentCollectionResponse {
 }
 
 export interface CreateContentCollectionData {
+  type: ContentCollectionTypeEnum;
+  slug: string;
   tenantId: string;
   name: string;
   displayName: string;

@@ -56,7 +56,7 @@ const contentCollectionController = (context: AppContext) => {
         await cleanupUploadedFiles(req);
         next(err);
       }
-    }
+    },
   );
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {

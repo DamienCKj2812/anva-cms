@@ -22,7 +22,6 @@ class ContentTranslationService extends BaseService {
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentTranslationData> = new Set(["data", "status"] as const);
   private attributeService: AttributeService;
   private contentService: ContentService;
-  private contentTranslationService: ContentTranslationService;
 
   constructor(context: AppContext) {
     super(context);
@@ -33,7 +32,6 @@ class ContentTranslationService extends BaseService {
   async init() {
     this.attributeService = this.getService("AttributeService");
     this.contentService = this.getService("ContentService");
-    this.contentTranslationService = this.getService("ContentTranslationService");
   }
 
   private async createValidation(
@@ -48,7 +46,7 @@ class ContentTranslationService extends BaseService {
     if (!data) throw new ValidationError('"data" field is required');
     if (!status) throw new ValidationError('"status" field is required');
 
-    const existingTranslation = await this.contentTranslationService.findOne({ tenantLocaleId: tenantLocale._id });
+    const existingTranslation = await this.findOne({ tenantLocaleId: tenantLocale._id, contentId: content._id });
     if (existingTranslation) {
       throw new ValidationError(`Content already have the locale, please change another locale: ${existingTranslation.locale}`);
     }

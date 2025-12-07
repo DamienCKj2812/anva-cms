@@ -7,7 +7,7 @@ import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { Content, ContentCount, ContentStatusEnum, CreateContentData, UpdateContentData } from "./models";
 import ContentCollectionService from "../../content-collection/database/services";
-import { ContentCollection } from "../../content-collection/database/models";
+import { ContentCollection, ContentCollectionTypeEnum } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
@@ -46,6 +46,10 @@ class ContentService extends BaseService {
     }
     if (!Object.values(ContentStatusEnum).includes(status as ContentStatusEnum)) {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
+    }
+    if (contentCollection.type == ContentCollectionTypeEnum.SINGLE) {
+      const existingContent = await this.findOne({ _id: contentCollection._id });
+      if (existingContent) throw new ValidationError("Current collection is a single type, cannot create more than one content");
     }
     let validate: ValidateFunction;
     console.dir({ fullSchema }, { depth: null, colors: true });

@@ -11,7 +11,7 @@ import folderController from "../module/folder/controller";
 import contentTranslationController from "../module/content-translation/controller";
 import attributeComponentController from "../module/attribute-component/controller";
 
-const createRouter = (context: any) => {
+const createAdminRouter = (context: any) => {
   const router = Router();
 
   router.use("/auth", authController(context));
@@ -29,4 +29,4 @@ const createRouter = (context: any) => {
   return router;
 };
 
-export default createRouter;
+export default createAdminRouter;

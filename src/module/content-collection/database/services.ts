@@ -4,19 +4,26 @@ import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
-import { ContentCollection, CreateContentCollectionData, DeleteContentCollectionResponse, UpdateContentCollectionData } from "./models";
+import {
+  ContentCollection,
+  ContentCollectionTypeEnum,
+  CreateContentCollectionData,
+  DeleteContentCollectionResponse,
+  UpdateContentCollectionData,
+} from "./models";
 import TenantService from "../../tenant/database/services";
 import { Attribute, AttributeKindEnum } from "../../attribute/database/models";
 import { BaseService } from "../../core/base-service";
 import AttributeService from "../../attribute/database/services";
 import ContentService from "../../content/database/services";
 import AttributeComponentService from "../../attribute-component/database/services";
+import { ContentStatusEnum } from "../../content/database/models";
 
 class ContentCollectionService extends BaseService {
   private db: Db;
   private collection: Collection<ContentCollection>;
   public readonly collectionName = "content-collections";
-  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentCollectionData> = new Set(["name", "displayName"] as const);
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentCollectionData> = new Set(["slug", "displayName"] as const);
   private tenantService: TenantService;
   private attributeService: AttributeService;
   private contentService: ContentService;
@@ -36,16 +43,19 @@ class ContentCollectionService extends BaseService {
   }
 
   private async createValidation(data: CreateContentCollectionData): Promise<CreateContentCollectionData> {
-    const { tenantId, name, displayName } = data;
+    const { tenantId, slug, displayName, type } = data;
     const userId = getCurrentUserId(this.context);
     if (!("tenantId" in data)) {
       throw new ValidationError('"tenantId" field is required');
     }
-    if (!("name" in data)) {
-      throw new ValidationError('"name" field is required');
+    if (!("slug" in data)) {
+      throw new ValidationError('"slug" field is required');
     }
     if (!("displayName" in data)) {
       throw new ValidationError('"displayName" field is required');
+    }
+    if (!("type" in data)) {
+      throw new ValidationError('"type" field is required');
     }
     validateObjectId(tenantId);
     const tenant = await this.tenantService.getById(tenantId);
@@ -55,14 +65,14 @@ class ContentCollectionService extends BaseService {
     if (!tenant.createdBy.equals(userId)) {
       throw new ForbiddenError("You are not allowed to access this resources");
     }
-    if (typeof name !== "string" || !name.trim()) {
-      throw new ValidationError("name must be a non-empty string");
+    if (typeof slug !== "string" || !slug.trim()) {
+      throw new ValidationError("slug must be a non-empty string");
     }
-    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(name)) {
-      throw new ValidationError("Name can only contain letters, numbers, and single hyphens (no spaces)");
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(slug)) {
+      throw new ValidationError("slug can only contain letters, numbers, and single hyphens (no spaces)");
     }
     const existingCollection = await this.collection.findOne({
-      name: name.trim(),
+      slug: slug.trim(),
       createdBy: userId,
     });
     if (existingCollection) {
@@ -71,19 +81,24 @@ class ContentCollectionService extends BaseService {
     if (typeof displayName !== "string" || !displayName.trim()) {
       throw new ValidationError("displayName must be a non-empty string");
     }
+    if (!Object.values(ContentCollectionTypeEnum).includes(type)) {
+      throw new ValidationError(`collection type must be one of: ${Object.values(ContentCollectionTypeEnum).join(", ")}`);
+    }
+
     return data;
   }
 
   async create(data: CreateContentCollectionData): Promise<ContentCollection> {
-    const { tenantId, name, displayName } = await this.createValidation(data);
+    const { tenantId, slug, displayName, type } = await this.createValidation(data);
     const createdBy = getCurrentUserId(this.context);
 
-    console.log("Creating :", name);
+    console.log("Creating :", slug);
     const newContentCollection: ContentCollection = {
       _id: new ObjectId(),
       tenantId: new ObjectId(tenantId),
-      name: name.trim(),
+      slug: slug.trim(),
       displayName: displayName.trim(),
+      type,
       schema: null,
       createdAt: new Date(),
       createdBy,
@@ -125,29 +140,29 @@ class ContentCollectionService extends BaseService {
   }
 
   private async updateValidation(contentCollection: ContentCollection, data: UpdateContentCollectionData): Promise<UpdateContentCollectionData> {
-    const { name, displayName } = data;
+    const { slug, displayName } = data;
     let updateData: UpdateContentCollectionData = { ...data };
     let userId = getCurrentUserId(this.context);
 
-    if (!("name" in data) && !("displayName" in data)) {
+    if (!("slug" in data) && !("displayName" in data)) {
       throw new BadRequestError("No valid fields provided for update");
     }
 
-    if ("name" in data) {
-      if (typeof name !== "string" || !name.trim()) {
-        throw new ValidationError("name must be a non-empty string");
+    if ("slug" in data) {
+      if (typeof slug !== "string" || !slug.trim()) {
+        throw new ValidationError("slug must be a non-empty string");
       }
-      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(name)) {
-        throw new ValidationError("Name can only contain letters, numbers, and single hyphens (no spaces)");
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(slug)) {
+        throw new ValidationError("slug can only contain letters, numbers, and single hyphens (no spaces)");
       }
       const existingCollection = await this.collection.findOne({
-        name: name.trim(),
+        slug: slug.trim(),
         createdBy: userId,
       });
       if (existingCollection) {
         throw new ConflictError("Content collection already exists");
       }
-      updateData.name = name.trim();
+      updateData.slug = slug.trim();
     }
 
     if ("displayName" in data) {
@@ -212,7 +227,7 @@ class ContentCollectionService extends BaseService {
   }
 
   private async deleteValidation(id: string): Promise<{ contentCollection: ContentCollection; nonDeletedAttributes: WithMetaData<Attribute> }> {
-    const contentCollection = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { name: 1 } });
+    const contentCollection = await this.collection.findOne({ _id: new ObjectId(id) });
     const userId = getCurrentUserId(this.context);
     if (!contentCollection) {
       throw new NotFoundError("content collection not found");

@@ -331,7 +331,7 @@ class ContentCollectionService extends BaseService {
   }
 
   async updateSchema(oldAttribute: Attribute, attribute: Attribute): Promise<ContentCollection> {
-    const contentCollection = await this.getById(oldAttribute.contentCollectionId.toString());
+    const contentCollection = await this.getById(oldAttribute.contentCollectionId?.toString() || "");
     if (!contentCollection) throw new NotFoundError("Content collection not found");
 
     const schema = contentCollection.schema ?? {

@@ -60,7 +60,8 @@ class TenantService extends BaseService {
 
     const result = await this.collection.insertOne(newTenant);
     await this.tenantLocaleService.create({
-      data: { tenantId: result.insertedId.toString(), displayName: "en", locale: "en", createdBy: data.createdBy },
+      data: { displayName: "en", locale: "en" },
+      tenant: newTenant,
       isDefault: true,
     });
     return newTenant;
@@ -132,7 +133,7 @@ class TenantService extends BaseService {
     const updatedTenant = await this.collection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
-      { returnDocument: "after" }
+      { returnDocument: "after" },
     );
 
     if (!updatedTenant) {

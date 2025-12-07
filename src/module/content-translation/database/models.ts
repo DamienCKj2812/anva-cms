@@ -3,6 +3,7 @@ import { Content, ContentStatusEnum } from "../../content/database/models";
 
 export interface ContentTranslation {
   _id: ObjectId;
+  contentCollectionId: ObjectId;
   tenantLocaleId: ObjectId;
   contentId: ObjectId;
   locale: string;

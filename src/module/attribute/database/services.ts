@@ -229,6 +229,112 @@ class AttributeService extends BaseService {
     return newAttribute;
   }
 
+  private async addAttributeInComponentValidation(
+    data: CreatePrimitiveAttributeDTO,
+    attributeComponent: AttributeComponent,
+  ): Promise<CreatePrimitiveAttributeDTO> {
+    // --- SANITIZATION ---
+    if (typeof data.key === "string") {
+      data.key = data.key.trim();
+    }
+    if (!/^[A-Za-z0-9]+$/.test(data.key)) {
+      throw new ValidationError("key may only contain letters and numbers (no spaces or symbols)");
+    }
+    const { key, label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
+    // --- VALIDATION ---
+    if (!("key" in data)) {
+      throw new ValidationError('"key" field is required');
+    }
+    if (!("label" in data)) {
+      throw new ValidationError('"label" field is required');
+    }
+    if (!("required" in data)) {
+      throw new ValidationError('"required" field is required');
+    }
+    if (!("attributeType" in data)) {
+      throw new ValidationError('"attributeType" field is required');
+    }
+    if (!("localizable" in data)) {
+      throw new ValidationError('"localizable" field is required');
+    }
+
+    if (typeof key !== "string" || !key.trim()) {
+      throw new ValidationError("key must be a non-empty string");
+    }
+
+    const existKey = await this.collection.findOne({
+      componentRefId: attributeComponent._id,
+      key,
+    });
+    if (existKey) {
+      throw new ValidationError("key already exists in this component");
+    }
+
+    if (typeof label !== "string" || !label.trim()) {
+      throw new ValidationError("label must be a non-empty string");
+    }
+
+    if (typeof required !== "boolean") {
+      throw new ValidationError("required must be a boolean");
+    }
+
+    if (!Object.values(AttributeTypeEnum).includes(attributeType)) {
+      throw new ValidationError(`Attribute attributeType must be one of: ${Object.values(AttributeTypeEnum).join(", ")}`);
+    }
+
+    if (typeof localizable !== "boolean") {
+      throw new ValidationError("localizable must be a boolean");
+    }
+
+    if (attributeFormat !== undefined && !Object.values(AttributeFormatEnum).includes(attributeFormat)) {
+      throw new ValidationError(`Format type must be one of: ${Object.values(AttributeFormatEnum).join(", ")}`);
+    }
+
+    if (defaultValue !== undefined) {
+      this.validateDefaultValue(attributeType, defaultValue);
+    }
+
+    if (enumValues !== undefined) {
+      this.validateEnumValue(enumValues);
+    }
+
+    if (validation !== undefined) {
+      this.validateAttributeValidation(attributeType, validation, attributeFormat);
+    }
+
+    return data; // key is returned trimmed
+  }
+
+  async addAttributeInComponent(data: CreatePrimitiveAttributeDTO, attributeComponent: AttributeComponent): Promise<Attribute> {
+    const validatedData = await this.addAttributeInComponentValidation(data, attributeComponent);
+    const createdBy = getCurrentUserId(this.context);
+
+    console.log("adding primitive attribute into the component: ", validatedData);
+    const newAttribute: Attribute = {
+      _id: new ObjectId(),
+      key: validatedData.key,
+      label: validatedData.label,
+      attributeKind: AttributeKindEnum.PRIMITIVE,
+      componentRefId: attributeComponent._id,
+      attributeType: validatedData.attributeType,
+      attributeFormat: validatedData.attributeFormat,
+      required: validatedData.required,
+      defaultValue: validatedData.defaultValue,
+      enumValues: validatedData.enumValues,
+      validation: validatedData.validation,
+      localizable: validatedData.localizable,
+      position: attributeComponent.attributes.length,
+      createdBy,
+      createdAt: new Date(),
+      updatedAt: null,
+    };
+    const result = await this.collection.insertOne(newAttribute);
+    if (!result) {
+      throw new NotFoundError("Failed to create the attribute");
+    }
+    return newAttribute;
+  }
+
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<Attribute>> {
     const options = {
       ...queryOptions,
@@ -324,7 +430,7 @@ class AttributeService extends BaseService {
     if (!attribute) {
       throw new NotFoundError("attribute not found");
     }
-    const contentCollection = await this.contentCollectionService.getById(attribute.contentCollectionId.toString());
+    const contentCollection = await this.contentCollectionService.getById(attribute.contentCollectionId?.toString() || "");
     if (!contentCollection) {
       throw new NotFoundError("content collection not found for this attribute setting");
     }

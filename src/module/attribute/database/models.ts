@@ -30,7 +30,7 @@ export interface ValidationRules {
 
 export interface Attribute {
   _id: ObjectId;
-  contentCollectionId: ObjectId;
+  contentCollectionId?: ObjectId;
   key: string;
   label: string;
   attributeKind: AttributeKindEnum;

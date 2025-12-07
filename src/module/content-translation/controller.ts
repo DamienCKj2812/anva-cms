@@ -12,25 +12,30 @@ const contentTranslationController = (context: AppContext) => {
   const contentTranslationService = context.diContainer!.get("ContentTranslationService");
   const contentCollectionService = context.diContainer!.get("ContentCollectionService");
   const contentService = context.diContainer!.get("ContentService");
+  const tenantLocaleService = context.diContainer!.get("TenantLocaleService");
+  const attributeService = context.diContainer!.get("AttributeService");
 
   router.use(authenticate(context));
 
-  router.post("/create", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:tenantLocaleId/:contentCollectionId/:contentId/create", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { contentCollectionId, contentId } = req.body;
+      const { tenantLocaleId, contentCollectionId, contentId } = req.params;
 
       if (!contentCollectionId) throw new BadRequestError('"contentCollectionId" field is required');
       if (!contentId) throw new BadRequestError('"contentId" field is required');
 
-      const [contentCollection, content] = await Promise.all([
+      const [contentCollection, content, tenantLocale] = await Promise.all([
         contentCollectionService.findOne({ _id: new ObjectId(contentCollectionId) }),
         contentService.findOne({ _id: new ObjectId(contentId) }),
+        tenantLocaleService.findOne({ _id: new ObjectId(tenantLocaleId) }),
       ]);
 
       if (!contentCollection) throw new NotFoundError("contentCollection not found");
       if (!content) throw new NotFoundError("content not found");
+      if (!tenantLocale) throw new NotFoundError("tenantLocale not found");
+      const fullSchema = await attributeService.getValidationSchema(contentCollection);
 
-      const contentTranslation = await contentTranslationService.create(req.body, contentCollection, content);
+      const contentTranslation = await contentTranslationService.create(req.body, contentCollection, content, tenantLocale, fullSchema);
 
       res.status(201).json(successResponse(contentTranslation));
     } catch (err) {
@@ -84,15 +89,27 @@ const contentTranslationController = (context: AppContext) => {
     }
   });
 
-  // router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
-  // try {
-  //    const updatedContentTranslation = await contentTranslationService.update(req.params.id, req.body);
-  //   res.status(200).json(successResponse(updatedContentTranslation));
-  // } catch (err) {
-  //   await cleanupUploadedFiles(req);
-  //  next(err);
-  //}
-  //});
+  router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const contentTranslation = await contentTranslationService.findOne({ _id: new ObjectId(id) });
+      if (!contentTranslation) throw new NotFoundError("contentTranslation not found");
+      const [contentCollection, content] = await Promise.all([
+        contentCollectionService.findOne({ _id: contentTranslation.contentCollectionId }),
+        contentService.findOne({ _id: contentTranslation.contentId }),
+      ]);
+      if (!contentCollection) throw new NotFoundError("contentCollection not found");
+      if (!content) throw new NotFoundError("content not found");
+      const fullSchema = await attributeService.getValidationSchema(contentCollection);
+
+      const updatedContentTranslation = await contentTranslationService.update(req.body, contentTranslation, contentCollection, content, fullSchema);
+
+      res.status(200).json(successResponse(updatedContentTranslation));
+    } catch (err) {
+      await cleanupUploadedFiles(req);
+      next(err);
+    }
+  });
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {

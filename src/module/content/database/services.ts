@@ -12,7 +12,7 @@ import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
-import ajv from "../../../utils/helper.ajv";
+import ajv, { preValidateComponentPlaceholders } from "../../../utils/helper.ajv";
 import { CreateContentTranslationData } from "../../content-translation/database/models";
 import { TenantLocale } from "../../tenant-locale/database/models";
 import TenantLocaleService from "../../tenant-locale/database/services";
@@ -58,6 +58,7 @@ class ContentService extends BaseService {
       if (!fullSchema) {
         throw new Error("fullSchema is missing");
       }
+      preValidateComponentPlaceholders(fullSchema);
       validate = ajv.compile(fullSchema);
     } catch (err) {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
@@ -247,24 +248,37 @@ class ContentService extends BaseService {
       throw new Error("Invalid schema for merging");
     }
 
+    if (typeof shared !== "object" || shared === null || Array.isArray(shared)) {
+      throw new Error("Shared data must be a non-null object");
+    }
+
+    if (typeof translation !== "object" || translation === null || Array.isArray(translation)) {
+      throw new Error("Translation data must be a non-null object");
+    }
+
     const result: any = {};
 
     for (const key of Object.keys(schema.properties || {})) {
       const fieldSchema = schema.properties[key];
-
       if (!fieldSchema) continue;
 
       // COMPONENT
       if (fieldSchema.type === "component") {
         if (fieldSchema.repeatable) {
-          const sharedArr = shared[key] || [];
-          const transArr = translation[key] || [];
+          const sharedArr = Array.isArray(shared[key]) ? shared[key] : [];
+          const transArr = Array.isArray(translation[key]) ? translation[key] : [];
           if (sharedArr.length !== transArr.length) {
             throw new Error(`Component array length mismatch for key: ${key}`);
           }
           result[key] = sharedArr.map((sItem: any, idx: number) => this.mergeTranslatableFields(sItem, transArr[idx], fieldSchema.items));
         } else {
-          result[key] = this.mergeTranslatableFields(shared[key] || {}, translation[key] || {}, fieldSchema);
+          if (typeof shared[key] !== "object" || shared[key] === null) {
+            throw new Error(`Shared field for component '${key}' must be an object`);
+          }
+          if (typeof translation[key] !== "object" || translation[key] === null) {
+            throw new Error(`Translation field for component '${key}' must be an object`);
+          }
+          result[key] = this.mergeTranslatableFields(shared[key], translation[key], fieldSchema);
         }
       }
       // PRIMITIVE

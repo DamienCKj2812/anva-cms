@@ -103,12 +103,8 @@ class AttributeComponentService extends BaseService {
     return newAttributeComponent;
   }
 
-  async addAttribute(
-    attributeDto: CreatePrimitiveAttributeDTO,
-    contentCollection: ContentCollection,
-    attributeComponent: AttributeComponent,
-  ): Promise<AttributeComponent> {
-    const newAttribute = await this.attributeService.createPrimitiveAttribute(attributeDto, contentCollection);
+  async addAttribute(attributeDto: CreatePrimitiveAttributeDTO, attributeComponent: AttributeComponent): Promise<AttributeComponent> {
+    const newAttribute = await this.attributeService.addAttributeInComponent(attributeDto, attributeComponent);
     const result = await this.collection.updateOne({ _id: attributeComponent._id }, { $push: { attributes: newAttribute._id } });
     if (!result.acknowledged || result.modifiedCount === 0) {
       throw new Error("failed to add attribute");

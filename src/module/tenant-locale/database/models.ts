@@ -12,10 +12,8 @@ export interface TenantLocale {
 }
 
 export interface CreateTenantLocaleData {
-  tenantId: string;
   locale: string;
   displayName: string;
-  createdBy: ObjectId;
 }
 
 export interface UpdateTenantLocaleData {

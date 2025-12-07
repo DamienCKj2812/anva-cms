@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { successResponse } from "../../utils/helper.response";
-import { NotFoundError } from "../../utils/helper.errors";
+import { NotFoundError, ValidationError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
@@ -10,12 +10,23 @@ import { ObjectId } from "mongodb";
 const tenantLocaleController = (context: AppContext) => {
   const router = Router();
   const tenantLocaleService = context.diContainer!.get("TenantLocaleService");
+  const tenantService = context.diContainer!.get("TenantService");
 
   router.use(authenticate(context));
 
-  router.post("/create", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:tenantId/create", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const tenantLocale = await tenantLocaleService.create({ data: { ...req.body, createdBy: getCurrentUserId(context) } });
+      const { tenantId } = req.params;
+      if (!tenantId) {
+        throw new ValidationError('"tenantId" field is required');
+      }
+      const existingTenant = await tenantService.findOne({
+        _id: new ObjectId(tenantId),
+      });
+      if (!existingTenant) {
+        throw new NotFoundError("Tenant not found");
+      }
+      const tenantLocale = await tenantLocaleService.create({ data: req.body, tenant: existingTenant });
       res.json(successResponse(tenantLocale));
     } catch (err) {
       await cleanupUploadedFiles(req);

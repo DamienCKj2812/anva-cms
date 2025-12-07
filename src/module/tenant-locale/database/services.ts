@@ -9,6 +9,8 @@ import { CreateTenantLocaleData, TenantLocale, UpdateTenantLocaleData } from "./
 import TenantService from "../../tenant/database/services";
 import ContentTranslationService from "../../content-translation/database/services";
 import ContentService from "../../content/database/services";
+import { getCurrentUserId } from "../../../utils/helper.auth";
+import { Tenant } from "../../tenant/database/models";
 
 class TenantLocaleService extends BaseService {
   private db: Db;
@@ -31,18 +33,9 @@ class TenantLocaleService extends BaseService {
     this.contentTranslationService = this.getService("ContentTranslationService");
   }
 
-  private async createValidation(data: CreateTenantLocaleData): Promise<CreateTenantLocaleData> {
-    const { tenantId, locale, displayName, createdBy } = data;
+  private async createValidation(data: CreateTenantLocaleData, tenant: Tenant): Promise<CreateTenantLocaleData> {
+    const { locale, displayName } = data;
 
-    if (!("tenantId" in data)) {
-      throw new ValidationError('"tenantId" field is required');
-    }
-    const existingTenant = await this.tenantService.findOne({
-      _id: new ObjectId(tenantId),
-    });
-    if (!existingTenant) {
-      throw new NotFoundError("Tenant not found");
-    }
     if (!("locale" in data)) {
       throw new ValidationError('"locale" field is required');
     }
@@ -55,7 +48,9 @@ class TenantLocaleService extends BaseService {
     if (typeof displayName !== "string" || !displayName.trim()) {
       throw new ValidationError("displayName must be a non-empty string");
     }
+    const createdBy = getCurrentUserId(this.context);
     const existingTenantLocale = await this.collection.findOne({
+      tenantId: tenant._id,
       locale: locale.trim(),
       createdBy,
     });
@@ -65,13 +60,14 @@ class TenantLocaleService extends BaseService {
     return data;
   }
 
-  async create({ data, isDefault = false }: { data: CreateTenantLocaleData; isDefault?: boolean }): Promise<TenantLocale> {
-    const { tenantId, locale, displayName, createdBy } = await this.createValidation(data);
+  async create({ data, tenant, isDefault = false }: { data: CreateTenantLocaleData; tenant: Tenant; isDefault?: boolean }): Promise<TenantLocale> {
+    const { locale, displayName } = await this.createValidation(data, tenant);
+    const createdBy = getCurrentUserId(this.context);
 
-    console.log("Creating tenantLocale:", displayName);
+    console.log("Creating tenant:", displayName);
     const newTenantLocale: TenantLocale = {
       _id: new ObjectId(),
-      tenantId: new ObjectId(tenantId),
+      tenantId: tenant._id,
       locale,
       displayName: displayName.trim(),
       isDefault,

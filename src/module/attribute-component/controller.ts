@@ -41,19 +41,15 @@ const attributeComponentController = (context: AppContext) => {
     }
   });
 
-  router.post("/:contentCollectionId/:attributeComponentId/add-attribute", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:attributeComponentId/add-attribute", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const [contentCollection, existingAttributeComponent] = await Promise.all([
-        contentCollectionService.findOne({ _id: new ObjectId(req.params.contentCollectionId) }),
+      const [existingAttributeComponent] = await Promise.all([
         attributeComponentService.findOne({ _id: new ObjectId(req.params.attributeComponentId) }),
       ]);
-      if (!contentCollection) {
-        throw new NotFoundError("content collection not found");
-      }
       if (!existingAttributeComponent) {
         throw new NotFoundError("existingAttributeComponent not found");
       }
-      const attributeComponent = await attributeComponentService.addAttribute(req.body, contentCollection, existingAttributeComponent);
+      const attributeComponent = await attributeComponentService.addAttribute(req.body, existingAttributeComponent);
       if (!attributeComponent) {
         throw new NotFoundError("attribute component not found");
       }

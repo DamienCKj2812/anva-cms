@@ -6,12 +6,10 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { ContentTranslation, CreateContentTranslationData, FullContentTranslation, UpdateContentTranslationData } from "./models";
-import ContentCollectionService from "../../content-collection/database/services";
-import ajv from "../../../utils/helper.ajv";
+import ajv, { preValidateComponentPlaceholders } from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
-import TenantLocaleService from "../../tenant-locale/database/services";
 import { Content, ContentStatusEnum } from "../../content/database/models";
 import AttributeService from "../../attribute/database/services";
 import { TenantLocale } from "../../tenant-locale/database/models";
@@ -22,10 +20,9 @@ class ContentTranslationService extends BaseService {
   private collection: Collection<ContentTranslation>;
   public readonly collectionName = "content-translations";
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateContentTranslationData> = new Set(["data", "status"] as const);
-  private contentCollectionService: ContentCollectionService;
-  private tenantLocaleService: TenantLocaleService;
   private attributeService: AttributeService;
   private contentService: ContentService;
+  private contentTranslationService: ContentTranslationService;
 
   constructor(context: AppContext) {
     super(context);
@@ -34,15 +31,15 @@ class ContentTranslationService extends BaseService {
   }
 
   async init() {
-    this.contentCollectionService = this.getService("ContentCollectionService");
-    this.tenantLocaleService = this.getService("TenantLocaleService");
     this.attributeService = this.getService("AttributeService");
     this.contentService = this.getService("ContentService");
+    this.contentTranslationService = this.getService("ContentTranslationService");
   }
 
   private async createValidation(
     createData: CreateContentTranslationData,
     content: Content,
+    tenantLocale: TenantLocale,
     contentCollection: ContentCollection,
     fullSchema: any,
   ): Promise<{ validatedData: CreateContentTranslationData }> {
@@ -51,8 +48,12 @@ class ContentTranslationService extends BaseService {
     if (!data) throw new ValidationError('"data" field is required');
     if (!status) throw new ValidationError('"status" field is required');
 
+    const existingTranslation = await this.contentTranslationService.findOne({ tenantLocaleId: tenantLocale._id });
+    if (existingTranslation) {
+      throw new ValidationError(`Content already have the locale, please change another locale: ${existingTranslation.locale}`);
+    }
     if (!fullSchema) {
-      throw new Error("Content collection schema is missing");
+      throw new ValidationError("Content collection schema is missing");
     }
 
     // Use mergeTranslatableFields to combine shared and translation safely
@@ -66,6 +67,7 @@ class ContentTranslationService extends BaseService {
     // Validate merged data against full schema
     let validate: ValidateFunction;
     try {
+      preValidateComponentPlaceholders(fullSchema);
       validate = ajv.compile(fullSchema);
     } catch (err) {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
@@ -91,11 +93,12 @@ class ContentTranslationService extends BaseService {
     tenantLocale: TenantLocale,
     fullSchema: any,
   ): Promise<ContentTranslation> {
-    const { validatedData } = await this.createValidation(data, content, contentCollection, fullSchema);
+    const { validatedData } = await this.createValidation(data, content, tenantLocale, contentCollection, fullSchema);
     const userId = getCurrentUserId(this.context);
 
     const newContent: ContentTranslation = {
       _id: new ObjectId(),
+      contentCollectionId: contentCollection._id,
       tenantLocaleId: tenantLocale._id,
       contentId: content._id,
       locale: tenantLocale.locale,
@@ -169,10 +172,11 @@ class ContentTranslationService extends BaseService {
   }
 
   private async updateValidation(
-    content: Content,
+    updateData: UpdateContentTranslationData,
     contentTranslation: ContentTranslation,
     contentCollection: ContentCollection,
-    updateData: UpdateContentTranslationData,
+    content: Content,
+    fullSchema: any,
   ): Promise<{
     validatedData: UpdateContentTranslationData;
   }> {
@@ -183,6 +187,10 @@ class ContentTranslationService extends BaseService {
     }
 
     if (data !== undefined) {
+      if (!fullSchema) {
+        throw new Error("Content collection schema is missing");
+      }
+
       const nonTranslatableFound = await this.attributeService.findMany({
         contentCollectionId: content.contentCollectionId,
         key: { $in: Object.keys(data) },
@@ -193,31 +201,28 @@ class ContentTranslationService extends BaseService {
         throw new ValidationError("Some fields are non-translatable");
       }
 
-      let mergedData: Record<string, any>;
+      let mergedData: any;
       const existingData = contentTranslation.data || {};
       mergedData = { ...existingData };
 
       // Only update keys provided in `data`
-      for (const key of Object.keys(data)) {
-        mergedData[key] = data[key];
-      }
+      mergedData = this.recursiveReplace(mergedData, data);
 
-      // Merge with shared fields for AJV validation
-      const fullData = { ...content.data, ...mergedData };
-
-      // 3️⃣ Validate merged data against AJV schema
-      if (!contentCollection.schema) {
-        throw new Error("Content collection schema is missing");
+      try {
+        mergedData = this.contentService.mergeTranslatableFields(content.data, mergedData, fullSchema);
+      } catch (err) {
+        throw new ValidationError(`Failed to merge translation: ${(err as Error).message}`);
       }
 
       let validate: ValidateFunction;
       try {
-        validate = ajv.compile(contentCollection.schema);
+        preValidateComponentPlaceholders(fullSchema);
+        validate = ajv.compile(fullSchema);
       } catch (err) {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
 
-      if (!validate(fullData)) {
+      if (!validate(mergedData)) {
         const errorText = ajv.errorsText(validate.errors, { separator: ", " });
         throw new ValidationError(`Data validation failed: ${errorText}`);
       }
@@ -234,14 +239,15 @@ class ContentTranslationService extends BaseService {
   }
 
   async update(
-    content: Content,
+    data: UpdateContentTranslationData,
     contentTranslation: ContentTranslation,
     contentCollection: ContentCollection,
-    data: UpdateContentTranslationData,
+    content: Content,
+    fullSchema: any,
   ): Promise<ContentTranslation> {
     const filteredUpdateData = filterFields(data, ContentTranslationService.ALLOWED_UPDATE_FIELDS);
 
-    const { validatedData } = await this.updateValidation(content, contentTranslation, contentCollection, data);
+    const { validatedData } = await this.updateValidation(filteredUpdateData, contentTranslation, contentCollection, content, fullSchema);
     console.log({ validatedData: validatedData });
 
     const updatingFields: Partial<ContentTranslation> = {
@@ -261,6 +267,21 @@ class ContentTranslationService extends BaseService {
     }
 
     return updatedContent;
+  }
+
+  private recursiveReplace(target: any, source: any): any {
+    if (Array.isArray(source)) {
+      // replace arrays completely
+      return source;
+    } else if (source && typeof source === "object") {
+      target = target || {};
+      for (const key of Object.keys(source)) {
+        target[key] = this.recursiveReplace(target[key], source[key]);
+      }
+      return target;
+    } else {
+      return source;
+    }
   }
 
   async updateMany(

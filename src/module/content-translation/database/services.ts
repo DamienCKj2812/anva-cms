@@ -6,7 +6,7 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { ContentTranslation, CreateContentTranslationData, FullContentTranslation, UpdateContentTranslationData } from "./models";
-import ajv, { preValidateComponentPlaceholders, recursiveReplace } from "../../../utils/helper.ajv";
+import ajv, { filterSchemaByLocalizable, preValidateComponentPlaceholders, recursiveReplace } from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
@@ -48,31 +48,29 @@ class ContentTranslationService extends BaseService {
 
     const existingTranslation = await this.findOne({ tenantLocaleId: tenantLocale._id, contentId: content._id });
     if (existingTranslation) {
-      throw new ValidationError(`Content already have the locale, please change another locale: ${existingTranslation.locale}`);
-    }
-    if (!fullSchema) {
-      throw new ValidationError("Content collection schema is missing");
+      throw new ValidationError(`Content already has the locale, please choose another locale: ${existingTranslation.locale}`);
     }
 
-    // Use mergeTranslatableFields to combine shared and translation safely
-    let mergedData: any;
+    if (!fullSchema) throw new ValidationError("Content collection schema is missing");
+
+    const filteredSchema = filterSchemaByLocalizable(fullSchema, true);
+    console.dir({ data }, { depth: null });
+    console.dir({ filteredSchema }, { depth: null });
+
     try {
-      mergedData = this.contentService.mergeTranslatableFields(content.data, data, fullSchema);
+      preValidateComponentPlaceholders(filteredSchema);
     } catch (err) {
-      throw new ValidationError(`Failed to merge translation: ${(err as Error).message}`);
+      throw new ValidationError(err instanceof Error ? err.message : String(err));
     }
 
-    // Validate merged data against full schema
     let validate: ValidateFunction;
     try {
-      preValidateComponentPlaceholders(fullSchema);
-      validate = ajv.compile(fullSchema);
+      validate = ajv.compile(filteredSchema);
     } catch (err) {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
     }
 
-    console.dir({ mergedData }, { depth: null, colors: true });
-    if (!validate(mergedData)) {
+    if (!validate(data)) {
       const errorText = ajv.errorsText(validate.errors, { separator: ", " });
       throw new ValidationError(`Data validation failed: ${errorText}`);
     }
@@ -81,7 +79,7 @@ class ContentTranslationService extends BaseService {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
     }
 
-    return { validatedData: { ...createData, data: mergedData } };
+    return { validatedData: { ...createData, data } };
   }
 
   async create(
@@ -94,8 +92,8 @@ class ContentTranslationService extends BaseService {
     const { validatedData } = await this.createValidation(data, content, tenantLocale, contentCollection, fullSchema);
     const userId = getCurrentUserId(this.context);
 
-    const { shared, translation } = this.contentService.separateTranslatableFields(validatedData.data, fullSchema);
-    console.log({ shared });
+    // Inject contentId for nested components
+    const { shared, translation } = this.contentService.separateTranslatableFields(validatedData.data, fullSchema, content._id);
 
     const newContent: ContentTranslation = {
       _id: new ObjectId(),
@@ -103,7 +101,7 @@ class ContentTranslationService extends BaseService {
       tenantLocaleId: tenantLocale._id,
       contentId: content._id,
       locale: tenantLocale.locale,
-      data: translation, // safely merged
+      data: translation, // only localizable fields
       status: validatedData.status as ContentStatusEnum,
       isDefault: tenantLocale.isDefault,
       createdAt: new Date(),
@@ -178,48 +176,33 @@ class ContentTranslationService extends BaseService {
     contentCollection: ContentCollection,
     content: Content,
     fullSchema: any,
-  ): Promise<{
-    validatedData: UpdateContentTranslationData;
-  }> {
+  ): Promise<{ validatedData: UpdateContentTranslationData }> {
     const { data, status } = updateData;
-    console.log({ updateData });
 
     if (!("data" in updateData) && !("status" in updateData)) {
       throw new BadRequestError("No valid fields provided for update");
     }
 
     if (data !== undefined) {
-      if (!fullSchema) {
-        throw new Error("Content collection schema is missing");
-      }
+      if (!fullSchema) throw new Error("Content collection schema is missing");
 
-      const nonTranslatableFound = await this.attributeService.findMany({
-        contentCollectionId: content.contentCollectionId,
-        key: { $in: Object.keys(data) },
-        localizable: false,
-      });
+      // Filter schema to only localizable fields
+      const filteredSchema = filterSchemaByLocalizable(fullSchema, true);
 
-      if (nonTranslatableFound.length > 0) {
-        throw new ValidationError("Some fields are non-translatable");
-      }
-
-      let mergedData: any;
+      // Only update the fields provided
       const existingData = contentTranslation.data || {};
-      mergedData = { ...existingData };
+      const mergedData = recursiveReplace(existingData, data);
 
-      // Only update keys provided in ``
-      mergedData = recursiveReplace(mergedData, data);
-
+      // Validate against filtered schema
       try {
-        mergedData = this.contentService.mergeTranslatableFields(content.data, mergedData, fullSchema);
+        preValidateComponentPlaceholders(filteredSchema);
       } catch (err) {
-        throw new ValidationError(`Failed to merge translation: ${(err as Error).message}`);
+        throw new ValidationError(err instanceof Error ? err.message : String(err));
       }
 
       let validate: ValidateFunction;
       try {
-        preValidateComponentPlaceholders(fullSchema);
-        validate = ajv.compile(fullSchema);
+        validate = ajv.compile(filteredSchema);
       } catch (err) {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
@@ -232,7 +215,6 @@ class ContentTranslationService extends BaseService {
       updateData.data = mergedData;
     }
 
-    // 5️⃣ Validate status if provided
     if (status !== undefined && !Object.values(ContentStatusEnum).includes(status as ContentStatusEnum)) {
       throw new ValidationError(`Status type must be one of: ${Object.values(ContentStatusEnum).join(", ")}`);
     }
@@ -250,12 +232,15 @@ class ContentTranslationService extends BaseService {
     const filteredUpdateData = filterFields(data, ContentTranslationService.ALLOWED_UPDATE_FIELDS);
 
     const { validatedData } = await this.updateValidation(filteredUpdateData, contentTranslation, contentCollection, content, fullSchema);
-    console.log({ validatedData: validatedData });
+
+    // Inject contentId for nested components
+    const { translation } = this.contentService.separateTranslatableFields(validatedData.data, fullSchema, content._id);
+    console.log({ translation });
 
     const updatingFields: Partial<ContentTranslation> = {
       ...validatedData,
       status: validatedData.status as ContentStatusEnum,
-      ...(validatedData.data ? { data: typeof validatedData.data === "string" ? JSON.parse(validatedData.data) : validatedData.data } : {}),
+      data: translation, // only localizable fields
     };
 
     const updatedContent = await this.collection.findOneAndUpdate(
@@ -264,9 +249,7 @@ class ContentTranslationService extends BaseService {
       { returnDocument: "after" },
     );
 
-    if (!updatedContent) {
-      throw new NotFoundError("failed to update content");
-    }
+    if (!updatedContent) throw new NotFoundError("Failed to update content translation");
 
     return updatedContent;
   }

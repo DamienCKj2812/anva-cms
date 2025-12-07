@@ -1,22 +1,74 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { successResponse } from "../../utils/helper.response";
+import { errorResponse, successResponse } from "../../utils/helper.response";
 import { AppContext } from "../../utils/helper.context";
 import { NotFoundError } from "../../utils/helper.errors";
+import { ContentCollectionTypeEnum } from "../../module/content-collection/database/models";
 
 const publicContentController = (context: AppContext) => {
   const router = Router();
   const contentService = context.diContainer!.get("ContentService");
   const contentCollectionService = context.diContainer!.get("ContentCollectionService");
+  const contentTranslationService = context.diContainer!.get("ContentTranslationService");
+  const attributeService = context.diContainer!.get("AttributeService");
 
   router.get("/:slug/get-all", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { slug } = req.params;
-      const contentCollection = await contentCollectionService.findOne({ slug: slug });
+      const { locale } = req.query as { locale?: string };
+
+      const contentCollection = await contentCollectionService.findOne({ slug });
       if (!contentCollection) {
-        throw new NotFoundError("content collection not found check the slug");
+        throw new NotFoundError("Content collection not found. Check the slug.");
       }
 
-      res.status(200).json(successResponse(content));
+      if (contentCollection.type === ContentCollectionTypeEnum.SINGLE) {
+        const translationQuery: any = {};
+
+        translationQuery.contentCollectionId = contentCollection._id;
+        if (locale) translationQuery.locale = locale;
+        else translationQuery.isDefault = true;
+
+        const [content, contentTranslation, fullSchema] = await Promise.all([
+          contentService.findOne({ contentCollectionId: contentCollection._id }),
+          contentTranslationService.findOne(translationQuery),
+          attributeService.getValidationSchema(contentCollection),
+        ]);
+        if (!content) {
+          throw new NotFoundError("content not found");
+        }
+        if (!contentTranslation) {
+          throw new NotFoundError("contentTranslation not found");
+        }
+
+        console.dir({ contentData: content.data }, { depth: null, colors: true });
+        console.dir({ contentTranslationData: contentTranslation.data }, { depth: null, colors: true });
+        console.dir({ fullSchema }, { depth: null, colors: true });
+        const mergedData = await contentService.mergeTranslatableFields(content.data, contentTranslation.data, fullSchema);
+        console.dir({ mergedData }, { depth: null, colors: true });
+        return res.json(successResponse(mergedData));
+      } else if (contentCollection.type === ContentCollectionTypeEnum.COLLECTION) {
+        const translationQuery: any = {};
+        translationQuery.contentCollectionId = contentCollection._id;
+        if (locale) translationQuery.locale = locale;
+        else translationQuery.isDefault = true;
+
+        const [content, contentTranslation, fullSchemaObj] = await Promise.all([
+          contentService.findMany({ contentCollectionId: contentCollection._id }),
+          contentTranslationService.findMany(translationQuery),
+          attributeService.getValidationSchema(contentCollection),
+        ]);
+
+        // Wrap schema in array
+        const fullSchema = {
+          type: "array",
+          items: fullSchemaObj,
+        };
+
+        const mergedData = await contentService.mergeTranslatableFields(content, contentTranslation, fullSchema);
+        return res.json(successResponse(mergedData));
+      }
+
+      return res.json({ message: "Not a SINGLE content collection type" });
     } catch (err) {
       next(err);
     }

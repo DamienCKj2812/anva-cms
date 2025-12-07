@@ -316,7 +316,6 @@ class ContentCollectionService extends BaseService {
         type: "component",
         componentRefId: attribute.componentRefId,
         repeatable: component.repeatable,
-        localizable: component.localizable, // mark component-level localization
       };
     }
 
@@ -396,7 +395,6 @@ class ContentCollectionService extends BaseService {
           type: "component",
           componentRefId: attribute.componentRefId,
           repeatable: component.repeatable,
-          localizable: component.localizable, // mark component-level localization
         };
         break;
 

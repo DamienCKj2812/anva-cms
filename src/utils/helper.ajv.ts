@@ -49,16 +49,73 @@ export function preValidateComponentPlaceholders(schema: any, path = "data") {
 }
 
 export function recursiveReplace(target: any, source: any): any {
+  if (source === undefined) {
+    return target;
+  }
+
   if (Array.isArray(source)) {
-    // replace arrays completely
     return source;
-  } else if (source && typeof source === "object") {
+  }
+
+  if (source && typeof source === "object") {
     target = target || {};
     for (const key of Object.keys(source)) {
       target[key] = recursiveReplace(target[key], source[key]);
     }
     return target;
-  } else {
-    return source;
   }
+
+  return source;
+}
+
+export function filterSchemaByLocalizable(schema: any, localizable: boolean): any {
+  if (!schema) return null;
+
+  // OBJECT
+  if (schema.type === "object") {
+    const filteredProps: any = {};
+    const newRequired: string[] = [];
+
+    for (const [key, prop] of Object.entries(schema.properties || {})) {
+      let filteredProp: any = null;
+
+      // Nested object or array → recurse
+      if (prop.type === "object" || prop.type === "array") {
+        filteredProp = filterSchemaByLocalizable(prop, localizable);
+        // Preserve container even if empty to prevent AJV errors
+        if (!filteredProp) {
+          // Keep an empty structure if it was a nested object/array
+          filteredProp =
+            prop.type === "object"
+              ? { ...prop, properties: {}, required: [], additionalProperties: prop.additionalProperties ?? false }
+              : { ...prop, items: prop.items ?? {} };
+        }
+      } else {
+        // Primitive field → filter by localizable
+        const includePrimitive = (localizable && prop.localizable) || (!localizable && !prop.localizable);
+        if (includePrimitive) filteredProp = prop;
+      }
+
+      if (filteredProp) {
+        filteredProps[key] = filteredProp;
+        if (schema.required?.includes(key)) newRequired.push(key);
+      }
+    }
+
+    return {
+      ...schema,
+      properties: filteredProps,
+      ...(newRequired.length > 0 ? { required: newRequired } : {}),
+    };
+  }
+
+  // ARRAY
+  if (schema.type === "array") {
+    const filteredItems = filterSchemaByLocalizable(schema.items, localizable) || schema.items || {};
+    return { ...schema, items: filteredItems };
+  }
+
+  // PRIMITIVE
+  const includePrimitive = (localizable && schema.localizable) || (!localizable && !schema.localizable);
+  return includePrimitive ? schema : null;
 }

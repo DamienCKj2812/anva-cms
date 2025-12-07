@@ -1,4 +1,4 @@
-import { ObjectId, Db, Collection, FindOptions } from "mongodb";
+import { ObjectId, Db, Collection, FindOptions, Filter } from "mongodb";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
@@ -12,7 +12,7 @@ import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
-import ajv, { preValidateComponentPlaceholders, recursiveReplace } from "../../../utils/helper.ajv";
+import ajv, { filterSchemaByLocalizable, preValidateComponentPlaceholders, recursiveReplace } from "../../../utils/helper.ajv";
 import { ContentTranslation, CreateContentTranslationData } from "../../content-translation/database/models";
 import TenantLocaleService from "../../tenant-locale/database/services";
 
@@ -52,7 +52,6 @@ class ContentService extends BaseService {
       if (existingContent) throw new ValidationError("Current collection is a single type, cannot create more than one content");
     }
     let validate: ValidateFunction;
-    console.dir({ fullSchema }, { depth: null, colors: true });
     try {
       if (!fullSchema) {
         throw new Error("fullSchema is missing");
@@ -63,6 +62,8 @@ class ContentService extends BaseService {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
     }
 
+    console.dir({ data }, { depth: null, colors: true });
+    console.dir({ fullSchema }, { depth: null, colors: true });
     if (!validate(data)) {
       const errorText = ajv.errorsText(validate.errors, { separator: ", " });
       throw new ValidationError(`Data validation failed: ${errorText}`);
@@ -74,21 +75,26 @@ class ContentService extends BaseService {
   async create(data: CreateContentData, contentCollection: ContentCollection, fullSchema: any): Promise<Content> {
     const validatedData = await this.createValidation(data, contentCollection, fullSchema);
     const userId = getCurrentUserId(this.context);
-    console.log({ createData: data });
-    const { shared, translation } = this.separateTranslatableFields(validatedData.data, fullSchema);
+
     const newContent: Content = {
       _id: new ObjectId(),
       tenantId: contentCollection.tenantId,
       contentCollectionId: contentCollection._id!,
       status: validatedData.status as ContentStatusEnum,
-      data: shared,
+      data: {}, // we'll fill after separateTranslatableFields
       createdAt: new Date(),
       updatedAt: null,
       createdBy: userId,
     };
-    console.log({ shared });
-    console.log({ translation });
+
+    const { shared, translation } = this.separateTranslatableFields(validatedData.data, fullSchema, newContent._id);
+
+    // Assign shared data now that contentId is injected
+    newContent.data = shared;
+
     await this.collection.insertOne(newContent);
+
+    // Create translation if any
     if (Object.keys(translation).length > 0) {
       try {
         const contentTranslationDto: CreateContentTranslationData = {
@@ -97,15 +103,16 @@ class ContentService extends BaseService {
           status: ContentStatusEnum.PUBLISHED,
         };
         const tenantLocale = await this.tenantLocaleService.findOne({ tenantId: contentCollection.tenantId, isDefault: true });
-        if (!tenantLocale) {
-          throw new NotFoundError("tenantLocale not found");
-        }
+        if (!tenantLocale) throw new NotFoundError("tenantLocale not found");
+
         await this.contentTranslationService.create(contentTranslationDto, contentCollection, newContent, tenantLocale, fullSchema);
       } catch (err) {
+        // Rollback main content if translation fails
         await this.collection.deleteOne({ _id: newContent._id });
         throw err;
       }
     }
+
     return newContent;
   }
 
@@ -136,6 +143,10 @@ class ContentService extends BaseService {
     return await this.collection.findOne(filter, options);
   }
 
+  async findMany(filter: Filter<Content>, options?: FindOptions<Content>): Promise<Content[]> {
+    return this.collection.find(filter, options).toArray();
+  }
+
   private async updateValidation(content: Content, updateData: UpdateContentData, fullSchema: any): Promise<UpdateContentData> {
     const { data, status } = updateData;
 
@@ -143,36 +154,25 @@ class ContentService extends BaseService {
       throw new BadRequestError("No valid fields provided for update");
     }
 
-    let mergedData: any;
-
     if (data !== undefined) {
-      if (!fullSchema) {
-        throw new Error("Content collection schema is missing");
-      }
+      if (!fullSchema) throw new Error("Content collection schema is missing");
 
+      // Filter schema to only non-localizable fields (shared)
+      const filteredSchema = filterSchemaByLocalizable(fullSchema, false);
+
+      // Merge updated fields on top of existing shared data
       const existingData = content.data || {};
-      mergedData = { ...existingData };
-
-      mergedData = recursiveReplace(mergedData, data);
-
-      const defaultTranslation = await this.contentTranslationService.findOne({ contentId: content._id, isDefault: true });
-      if (defaultTranslation?.data) {
-        try {
-          mergedData = this.mergeTranslatableFields(mergedData, defaultTranslation.data, fullSchema);
-        } catch (err) {
-          throw new ValidationError(`Failed to merge translation: ${(err as Error).message}`);
-        }
-      }
+      const mergedData = recursiveReplace(existingData, data);
 
       try {
-        preValidateComponentPlaceholders(fullSchema);
+        preValidateComponentPlaceholders(filteredSchema);
       } catch (err) {
         throw new ValidationError(err instanceof Error ? err.message : String(err));
       }
 
       let validate: ValidateFunction;
       try {
-        validate = ajv.compile(fullSchema);
+        validate = ajv.compile(filteredSchema);
       } catch (err) {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
@@ -194,8 +194,11 @@ class ContentService extends BaseService {
 
   async update(content: Content, data: UpdateContentData, fullSchema: any): Promise<Content> {
     const filteredUpdateData = filterFields(data, ContentService.ALLOWED_UPDATE_FIELDS);
+
     const validatedData = await this.updateValidation(content, filteredUpdateData, fullSchema);
-    const { shared, translation } = this.separateTranslatableFields(validatedData.data, fullSchema);
+
+    // Inject contentId into translatable fields (for consistency)
+    const { shared, translation } = this.separateTranslatableFields(validatedData.data, fullSchema, content._id);
 
     const updatingFields: Partial<Content> = {
       ...validatedData,
@@ -203,16 +206,13 @@ class ContentService extends BaseService {
       data: shared,
     };
 
-    // 5️⃣ Persist
     const updatedContent = await this.collection.findOneAndUpdate(
       { _id: content._id },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
       { returnDocument: "after" },
     );
 
-    if (!updatedContent) {
-      throw new NotFoundError("Failed to update content");
-    }
+    if (!updatedContent) throw new NotFoundError("Failed to update content");
 
     return updatedContent;
   }
@@ -234,29 +234,28 @@ class ContentService extends BaseService {
   /**
    * Recursively separates shared vs translatable fields based on the schema
    */
-  separateTranslatableFields(data: any, schema: any): { shared: any; translation: any } {
+  separateTranslatableFields(data: any, schema: any, contentId: ObjectId): { shared: any; translation: any } {
     if (!schema) return { shared: data, translation: {} };
 
     // ARRAY case
     if (schema.type === "array" && schema.items) {
-      if (!Array.isArray(data)) {
-        return { shared: [], translation: [] };
-      }
-
+      const validArray = Array.isArray(data) ? data.filter((item) => item != null) : [];
       const sharedArr: any[] = [];
       const transArr: any[] = [];
 
-      for (const item of data) {
-        const separated = this.separateTranslatableFields(item, schema.items);
-        sharedArr.push(separated.shared);
-        transArr.push(separated.translation);
+      for (const item of validArray) {
+        const separated = this.separateTranslatableFields(item, schema.items, contentId);
+        if (separated.shared && Object.keys(separated.shared).length > 0) sharedArr.push(separated.shared);
+        if (separated.translation && Object.keys(separated.translation).length > 0) transArr.push(separated.translation);
       }
 
       return { shared: sharedArr, translation: transArr };
     }
 
-    // OBJECT case (component or normal object)
+    // OBJECT case
     if (schema.type === "object") {
+      if (!data || typeof data !== "object") return { shared: null, translation: null };
+
       const shared: any = {};
       const translation: any = {};
 
@@ -269,28 +268,27 @@ class ContentService extends BaseService {
           continue;
         }
 
-        // nested object component
-        if (fieldSchema.type === "object") {
-          const separated = this.separateTranslatableFields(fieldValue, fieldSchema);
-          shared[key] = separated.shared;
-          translation[key] = separated.translation;
+        // nested object or array
+        if (fieldSchema.type === "object" || fieldSchema.type === "array") {
+          const separated = this.separateTranslatableFields(fieldValue, fieldSchema, contentId);
+          if (separated.shared !== null) shared[key] = separated.shared;
+          if (separated.translation !== null) translation[key] = separated.translation;
           continue;
         }
 
-        // nested array component
-        if (fieldSchema.type === "array") {
-          const separated = this.separateTranslatableFields(fieldValue, fieldSchema);
-          shared[key] = separated.shared;
-          translation[key] = separated.translation;
-          continue;
-        }
-
-        // primitive
+        // primitive fields
         if (fieldSchema.localizable) {
           translation[key] = fieldValue;
         } else {
           shared[key] = fieldValue;
         }
+      }
+
+      // Inject contentId for the object itself
+      shared.contentId = contentId;
+
+      if (Object.keys(shared).length === 0 && Object.keys(translation).length === 0) {
+        return { shared: null, translation: null };
       }
 
       return { shared, translation };
@@ -301,60 +299,61 @@ class ContentService extends BaseService {
   }
 
   mergeTranslatableFields(shared: any, translation: any, schema: any): any {
-    if (!schema || schema.type !== "object") {
-      throw new Error("Invalid schema for merging");
+    if (!schema) return {};
+
+    // ARRAY case
+    if (schema.type === "array" && schema.items) {
+      const sharedArr = Array.isArray(shared) ? shared : [];
+      const transArr = Array.isArray(translation) ? translation : [];
+
+      // Build a map of translation items by contentId
+      const translationMap = new Map<string, any>();
+      transArr.forEach((t) => {
+        if (t && t.contentId) translationMap.set(t.contentId.toString(), t);
+      });
+
+      // Merge shared items with translation by contentId
+      return sharedArr.map((sItem) => {
+        const tItem = sItem.contentId ? translationMap.get(sItem.contentId.toString()) : {};
+        return this.mergeTranslatableFields(sItem, tItem, schema.items);
+      });
     }
 
-    if (typeof shared !== "object" || shared === null || Array.isArray(shared)) {
-      throw new Error("Shared data must be a non-null object");
-    }
+    // OBJECT case
+    if (schema.type === "object") {
+      if ((!shared || typeof shared !== "object") && (!translation || typeof translation !== "object")) {
+        return null;
+      }
 
-    if (typeof translation !== "object" || translation === null || Array.isArray(translation)) {
-      throw new Error("Translation data must be a non-null object");
-    }
+      const result: any = {};
+      for (const key of Object.keys(schema.properties || {})) {
+        const fieldSchema = schema.properties[key];
+        if (!fieldSchema) continue;
 
-    const result: any = {};
+        const sValue = shared?.[key] ?? null;
+        const tValue = translation?.[key] ?? null;
 
-    for (const key of Object.keys(schema.properties || {})) {
-      const fieldSchema = schema.properties[key];
-      if (!fieldSchema) continue;
-
-      // COMPONENT
-      if (fieldSchema.type === "component") {
-        if (fieldSchema.repeatable) {
-          const sharedArr = Array.isArray(shared[key]) ? shared[key] : [];
-          const transArr = Array.isArray(translation[key]) ? translation[key] : [];
-          if (sharedArr.length !== transArr.length) {
-            throw new Error(`Component array length mismatch for key: ${key}`);
+        if (fieldSchema.type === "object" || fieldSchema.type === "array") {
+          const mergedValue = this.mergeTranslatableFields(sValue, tValue, fieldSchema);
+          if (mergedValue !== null && (typeof mergedValue !== "object" || Object.keys(mergedValue).length > 0)) {
+            result[key] = mergedValue;
           }
-          result[key] = sharedArr.map((sItem: any, idx: number) => this.mergeTranslatableFields(sItem, transArr[idx], fieldSchema.items));
         } else {
-          if (typeof shared[key] !== "object" || shared[key] === null) {
-            throw new Error(`Shared field for component '${key}' must be an object`);
+          // primitive
+          if (fieldSchema.localizable) {
+            if (tValue !== undefined && tValue !== null) result[key] = tValue;
+          } else {
+            if (sValue !== undefined && sValue !== null) result[key] = sValue;
           }
-          if (typeof translation[key] !== "object" || translation[key] === null) {
-            throw new Error(`Translation field for component '${key}' must be an object`);
-          }
-          result[key] = this.mergeTranslatableFields(shared[key], translation[key], fieldSchema);
         }
       }
-      // PRIMITIVE
-      else {
-        if (fieldSchema.localizable) {
-          if (!(key in translation)) {
-            throw new Error(`Missing translatable field: ${key}`);
-          }
-          result[key] = translation[key];
-        } else {
-          if (!(key in shared)) {
-            throw new Error(`Missing shared field: ${key}`);
-          }
-          result[key] = shared[key];
-        }
-      }
+
+      return Object.keys(result).length > 0 ? result : null;
     }
 
-    return result;
+    // PRIMITIVE fallback
+    if (schema.localizable) return translation ?? null;
+    return shared ?? null;
   }
 }
 

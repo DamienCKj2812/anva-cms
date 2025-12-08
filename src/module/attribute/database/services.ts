@@ -580,7 +580,6 @@ class AttributeService extends BaseService {
             attributeKind: 1,
             componentSchema: "$component.schema",
             componentRepeatable: "$component.repeatable",
-            componentLocalizable: "$component.localizable",
           },
         },
       ])
@@ -590,7 +589,6 @@ class AttributeService extends BaseService {
       if (attr.attributeKind === AttributeKindEnum.COMPONENT && attr.componentSchema) {
         const finalSchema = {
           ...attr.componentSchema,
-          localizable: attr.componentLocalizable,
         };
         schema.properties[attr.key] = finalSchema;
       }

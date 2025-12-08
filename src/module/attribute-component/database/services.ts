@@ -42,7 +42,7 @@ class AttributeComponentService extends BaseService {
     if (!/^[A-Za-z0-9]+$/.test(data.category)) {
       throw new ValidationError("category may only contain letters and numbers (no spaces or symbols)");
     }
-    const { key, label, category, repeatable, localizable } = data;
+    const { key, label, category, repeatable } = data;
     if (!("key" in data)) {
       throw new ValidationError('"key" field is required');
     }
@@ -67,9 +67,6 @@ class AttributeComponentService extends BaseService {
     if (typeof repeatable !== "boolean") {
       throw new ValidationError("repeatable must be a boolean");
     }
-    if (typeof localizable !== "boolean") {
-      throw new ValidationError("localizable must be a boolean");
-    }
     const existedKey = await this.collection.findOne({ tenantId: tenant._id, category, key });
     if (existedKey) {
       throw new ValidationError("key already exist");
@@ -91,7 +88,6 @@ class AttributeComponentService extends BaseService {
       schema: {},
       attributes: [],
       repeatable: validatedData.repeatable,
-      localizable: validatedData.localizable,
       createdBy,
       createdAt: new Date(),
       updatedAt: null,
@@ -218,9 +214,7 @@ class AttributeComponentService extends BaseService {
       property.default = attribute.defaultValue;
     }
 
-    if (attributeComponent.localizable) {
-      property.localizable = attribute.localizable;
-    }
+    property.localizable = attribute.localizable;
 
     targetSchema.properties[attribute.key] = property;
 

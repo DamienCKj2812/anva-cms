@@ -12,7 +12,12 @@ import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
-import ajv, { filterSchemaByLocalizable, preValidateComponentPlaceholders, recursiveReplace } from "../../../utils/helper.ajv";
+import ajv, {
+  filterSchemaByLocalizable,
+  preValidateComponentPlaceholders,
+  recursiveReplace,
+  separateTranslatableFields,
+} from "../../../utils/helper.ajv";
 import { ContentTranslation, CreateContentTranslationData } from "../../content-translation/database/models";
 import TenantLocaleService from "../../tenant-locale/database/services";
 
@@ -61,7 +66,7 @@ class ContentService extends BaseService {
     } catch (err) {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
     }
-
+    console.log("creating content");
     console.dir({ data }, { depth: null, colors: true });
     console.dir({ fullSchema }, { depth: null, colors: true });
     if (!validate(data)) {
@@ -87,7 +92,7 @@ class ContentService extends BaseService {
       createdBy: userId,
     };
 
-    const { shared, translation } = this.separateTranslatableFields(validatedData.data, fullSchema, newContent._id);
+    const { shared, translation } = separateTranslatableFields(validatedData.data, fullSchema);
 
     // Assign shared data now that contentId is injected
     newContent.data = shared;
@@ -198,7 +203,7 @@ class ContentService extends BaseService {
     const validatedData = await this.updateValidation(content, filteredUpdateData, fullSchema);
 
     // Inject contentId into translatable fields (for consistency)
-    const { shared, translation } = this.separateTranslatableFields(validatedData.data, fullSchema, content._id);
+    const { shared, translation } = separateTranslatableFields(validatedData.data, fullSchema);
 
     const updatingFields: Partial<Content> = {
       ...validatedData,
@@ -229,131 +234,6 @@ class ContentService extends BaseService {
     const content = await this.deleteValidation(id);
     await this.collection.deleteOne({ _id: content._id });
     return content;
-  }
-
-  /**
-   * Recursively separates shared vs translatable fields based on the schema
-   */
-  separateTranslatableFields(data: any, schema: any, contentId: ObjectId): { shared: any; translation: any } {
-    if (!schema) return { shared: data, translation: {} };
-
-    // ARRAY case
-    if (schema.type === "array" && schema.items) {
-      const validArray = Array.isArray(data) ? data.filter((item) => item != null) : [];
-      const sharedArr: any[] = [];
-      const transArr: any[] = [];
-
-      for (const item of validArray) {
-        const separated = this.separateTranslatableFields(item, schema.items, contentId);
-        if (separated.shared && Object.keys(separated.shared).length > 0) sharedArr.push(separated.shared);
-        if (separated.translation && Object.keys(separated.translation).length > 0) transArr.push(separated.translation);
-      }
-
-      return { shared: sharedArr, translation: transArr };
-    }
-
-    // OBJECT case
-    if (schema.type === "object") {
-      if (!data || typeof data !== "object") return { shared: null, translation: null };
-
-      const shared: any = {};
-      const translation: any = {};
-
-      for (const key of Object.keys(data)) {
-        const fieldValue = data[key];
-        const fieldSchema = schema.properties?.[key];
-
-        if (!fieldSchema) {
-          shared[key] = fieldValue;
-          continue;
-        }
-
-        // nested object or array
-        if (fieldSchema.type === "object" || fieldSchema.type === "array") {
-          const separated = this.separateTranslatableFields(fieldValue, fieldSchema, contentId);
-          if (separated.shared !== null) shared[key] = separated.shared;
-          if (separated.translation !== null) translation[key] = separated.translation;
-          continue;
-        }
-
-        // primitive fields
-        if (fieldSchema.localizable) {
-          translation[key] = fieldValue;
-        } else {
-          shared[key] = fieldValue;
-        }
-      }
-
-      // Inject contentId for the object itself
-      shared.contentId = contentId;
-
-      if (Object.keys(shared).length === 0 && Object.keys(translation).length === 0) {
-        return { shared: null, translation: null };
-      }
-
-      return { shared, translation };
-    }
-
-    // primitive fallback
-    return { shared: data, translation: {} };
-  }
-
-  mergeTranslatableFields(shared: any, translation: any, schema: any): any {
-    if (!schema) return {};
-
-    // ARRAY case
-    if (schema.type === "array" && schema.items) {
-      const sharedArr = Array.isArray(shared) ? shared : [];
-      const transArr = Array.isArray(translation) ? translation : [];
-
-      // Build a map of translation items by contentId
-      const translationMap = new Map<string, any>();
-      transArr.forEach((t) => {
-        if (t && t.contentId) translationMap.set(t.contentId.toString(), t);
-      });
-
-      // Merge shared items with translation by contentId
-      return sharedArr.map((sItem) => {
-        const tItem = sItem.contentId ? translationMap.get(sItem.contentId.toString()) : {};
-        return this.mergeTranslatableFields(sItem, tItem, schema.items);
-      });
-    }
-
-    // OBJECT case
-    if (schema.type === "object") {
-      if ((!shared || typeof shared !== "object") && (!translation || typeof translation !== "object")) {
-        return null;
-      }
-
-      const result: any = {};
-      for (const key of Object.keys(schema.properties || {})) {
-        const fieldSchema = schema.properties[key];
-        if (!fieldSchema) continue;
-
-        const sValue = shared?.[key] ?? null;
-        const tValue = translation?.[key] ?? null;
-
-        if (fieldSchema.type === "object" || fieldSchema.type === "array") {
-          const mergedValue = this.mergeTranslatableFields(sValue, tValue, fieldSchema);
-          if (mergedValue !== null && (typeof mergedValue !== "object" || Object.keys(mergedValue).length > 0)) {
-            result[key] = mergedValue;
-          }
-        } else {
-          // primitive
-          if (fieldSchema.localizable) {
-            if (tValue !== undefined && tValue !== null) result[key] = tValue;
-          } else {
-            if (sValue !== undefined && sValue !== null) result[key] = sValue;
-          }
-        }
-      }
-
-      return Object.keys(result).length > 0 ? result : null;
-    }
-
-    // PRIMITIVE fallback
-    if (schema.localizable) return translation ?? null;
-    return shared ?? null;
   }
 }
 

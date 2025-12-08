@@ -6,7 +6,12 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { ContentTranslation, CreateContentTranslationData, FullContentTranslation, UpdateContentTranslationData } from "./models";
-import ajv, { filterSchemaByLocalizable, preValidateComponentPlaceholders, recursiveReplace } from "../../../utils/helper.ajv";
+import ajv, {
+  filterSchemaByLocalizable,
+  preValidateComponentPlaceholders,
+  recursiveReplace,
+  separateTranslatableFields,
+} from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
@@ -54,6 +59,7 @@ class ContentTranslationService extends BaseService {
     if (!fullSchema) throw new ValidationError("Content collection schema is missing");
 
     const filteredSchema = filterSchemaByLocalizable(fullSchema, true);
+    console.log("creating translation");
     console.dir({ data }, { depth: null });
     console.dir({ filteredSchema }, { depth: null });
 
@@ -93,7 +99,7 @@ class ContentTranslationService extends BaseService {
     const userId = getCurrentUserId(this.context);
 
     // Inject contentId for nested components
-    const { shared, translation } = this.contentService.separateTranslatableFields(validatedData.data, fullSchema, content._id);
+    const { shared, translation } = separateTranslatableFields(validatedData.data, fullSchema);
 
     const newContent: ContentTranslation = {
       _id: new ObjectId(),
@@ -234,7 +240,7 @@ class ContentTranslationService extends BaseService {
     const { validatedData } = await this.updateValidation(filteredUpdateData, contentTranslation, contentCollection, content, fullSchema);
 
     // Inject contentId for nested components
-    const { translation } = this.contentService.separateTranslatableFields(validatedData.data, fullSchema, content._id);
+    const { translation } = separateTranslatableFields(validatedData.data, fullSchema);
     console.log({ translation });
 
     const updatingFields: Partial<ContentTranslation> = {

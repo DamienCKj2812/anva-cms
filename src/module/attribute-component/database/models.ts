@@ -9,7 +9,6 @@ export interface AttributeComponent {
   schema: any;
   attributes: ObjectId[];
   repeatable: boolean;
-  localizable: boolean;
   createdBy: ObjectId;
   createdAt: Date;
   updatedAt: Date | null;
@@ -20,5 +19,4 @@ export interface CreateAttributeComponentDto {
   label: string;
   category: string;
   repeatable: boolean;
-  localizable: boolean;
 }

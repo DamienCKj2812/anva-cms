@@ -1,7 +1,7 @@
 import { ObjectId, Db, Collection, FindOptions, Filter } from "mongodb";
 import { getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
-import { NotFoundError, ValidationError } from "../../../utils/helper.errors";
+import { BadRequestError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
@@ -29,13 +29,19 @@ class AttributeService extends BaseService {
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdatePrimitiveAttributeDTO> = new Set([
     "label",
     "required",
-    "attributeType",
     "localizable",
-    "attributeFormat",
     "defaultValue",
     "enumValues",
     "validation",
   ] as const);
+  private static readonly ALLOWED_UPDATE_VALIDATION_FIELDS: ReadonlySet<keyof ValidationRules> = new Set([
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "pattern",
+  ] as const);
+
   private contentCollectionService: ContentCollectionService;
   private attributeComponentService: AttributeComponentService;
 
@@ -65,7 +71,7 @@ class AttributeService extends BaseService {
     if (!/^[A-Za-z0-9]+$/.test(data.key)) {
       throw new ValidationError("key may only contain letters and numbers (no spaces or symbols)");
     }
-    const { key, label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
+    let { key, label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
     // --- VALIDATION ---
     if (!("key" in data)) {
       throw new ValidationError('"key" field is required');
@@ -131,6 +137,9 @@ class AttributeService extends BaseService {
   }
 
   async createPrimitiveAttribute(data: CreatePrimitiveAttributeDTO, contentCollection: ContentCollection): Promise<Attribute> {
+    if (data.validation) {
+      data.validation = filterFields(data.validation, AttributeService.ALLOWED_UPDATE_VALIDATION_FIELDS);
+    }
     const validatedData = await this.createPrimitiveAttributeValidation(data, contentCollection);
     const createdBy = getCurrentUserId(this.context);
 
@@ -236,112 +245,6 @@ class AttributeService extends BaseService {
     return newAttribute;
   }
 
-  private async addAttributeInComponentValidation(
-    data: CreatePrimitiveAttributeDTO,
-    attributeComponent: AttributeComponent,
-  ): Promise<CreatePrimitiveAttributeDTO> {
-    // --- SANITIZATION ---
-    if (typeof data.key === "string") {
-      data.key = data.key.trim();
-    }
-    if (!/^[A-Za-z0-9]+$/.test(data.key)) {
-      throw new ValidationError("key may only contain letters and numbers (no spaces or symbols)");
-    }
-    const { key, label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
-    // --- VALIDATION ---
-    if (!("key" in data)) {
-      throw new ValidationError('"key" field is required');
-    }
-    if (!("label" in data)) {
-      throw new ValidationError('"label" field is required');
-    }
-    if (!("required" in data)) {
-      throw new ValidationError('"required" field is required');
-    }
-    if (!("attributeType" in data)) {
-      throw new ValidationError('"attributeType" field is required');
-    }
-    if (!("localizable" in data)) {
-      throw new ValidationError('"localizable" field is required');
-    }
-
-    if (typeof key !== "string" || !key.trim()) {
-      throw new ValidationError("key must be a non-empty string");
-    }
-
-    const existKey = await this.collection.findOne({
-      componentRefId: attributeComponent._id,
-      key,
-    });
-    if (existKey) {
-      throw new ValidationError("key already exists in this component");
-    }
-
-    if (typeof label !== "string" || !label.trim()) {
-      throw new ValidationError("label must be a non-empty string");
-    }
-
-    if (typeof required !== "boolean") {
-      throw new ValidationError("required must be a boolean");
-    }
-
-    if (!Object.values(AttributeTypeEnum).includes(attributeType)) {
-      throw new ValidationError(`Attribute attributeType must be one of: ${Object.values(AttributeTypeEnum).join(", ")}`);
-    }
-
-    if (typeof localizable !== "boolean") {
-      throw new ValidationError("localizable must be a boolean");
-    }
-
-    if (attributeFormat !== undefined && !Object.values(AttributeFormatEnum).includes(attributeFormat)) {
-      throw new ValidationError(`Format type must be one of: ${Object.values(AttributeFormatEnum).join(", ")}`);
-    }
-
-    if (defaultValue !== undefined) {
-      this.validateDefaultValue(attributeType, defaultValue);
-    }
-
-    if (enumValues !== undefined) {
-      this.validateEnumValue(enumValues);
-    }
-
-    if (validation !== undefined) {
-      this.validateAttributeValidation(attributeType, validation, attributeFormat);
-    }
-
-    return data; // key is returned trimmed
-  }
-
-  async addAttributeInComponent(data: CreatePrimitiveAttributeDTO, attributeComponent: AttributeComponent): Promise<Attribute> {
-    const validatedData = await this.addAttributeInComponentValidation(data, attributeComponent);
-    const createdBy = getCurrentUserId(this.context);
-
-    console.log("adding primitive attribute into the component: ", validatedData);
-    const newAttribute: Attribute = {
-      _id: new ObjectId(),
-      key: validatedData.key,
-      label: validatedData.label,
-      attributeKind: AttributeKindEnum.PRIMITIVE,
-      componentRefId: attributeComponent._id,
-      attributeType: validatedData.attributeType,
-      attributeFormat: validatedData.attributeFormat,
-      required: validatedData.required,
-      defaultValue: validatedData.defaultValue,
-      enumValues: validatedData.enumValues,
-      validation: validatedData.validation,
-      localizable: validatedData.localizable,
-      position: attributeComponent.attributes.length,
-      createdBy,
-      createdAt: new Date(),
-      updatedAt: null,
-    };
-    const result = await this.collection.insertOne(newAttribute);
-    if (!result) {
-      throw new NotFoundError("Failed to create the attribute");
-    }
-    return newAttribute;
-  }
-
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<Attribute>> {
     const options = {
       ...queryOptions,
@@ -365,9 +268,19 @@ class AttributeService extends BaseService {
     return this.collection.find(filter, options).toArray();
   }
 
-  private async updateValidation(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<UpdatePrimitiveAttributeDTO> {
-    const { label, required, localizable, defaultValue, enumValues } = data;
-    if (!("label" in data) && !("required" in data) && !("defaultValue" in data) && !("enumValues" in data) && !("validation" in data)) {
+  private async updatePrimitiveAttributeValidation(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<UpdatePrimitiveAttributeDTO> {
+    const { label, required, localizable, defaultValue, enumValues, validation } = data;
+    if (attribute.attributeKind != AttributeKindEnum.PRIMITIVE) {
+      throw new BadRequestError("only can modify the primitive attribute");
+    }
+    if (
+      !("label" in data) &&
+      !("required" in data) &&
+      !("localizable" in data) &&
+      !("defaultValue" in data) &&
+      !("enumValues" in data) &&
+      !("validation" in data)
+    ) {
       throw new NotFoundError("No valid fields provided for update");
     }
     if (label && (typeof label !== "string" || !label.trim())) {
@@ -406,12 +319,23 @@ class AttributeService extends BaseService {
         throw new ValidationError("enumValues must contain only non-empty strings");
       }
     }
+
+    if (validation !== undefined) {
+      if (!attribute.attributeType) {
+        throw new ValidationError("attribute is missing attributeType");
+      }
+      this.validateAttributeValidation(attribute.attributeType, validation, attribute.attributeFormat);
+      console.log("silently correct");
+    }
     return data;
   }
 
-  async update(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<Attribute> {
+  async updatePrimitiveAttribute(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<Attribute> {
+    if (data.validation) {
+      data.validation = filterFields(data.validation, AttributeService.ALLOWED_UPDATE_VALIDATION_FIELDS);
+    }
     const filteredUpdateData = filterFields(data, AttributeService.ALLOWED_UPDATE_FIELDS);
-    const validatedData = await this.updateValidation(attribute, filteredUpdateData);
+    const validatedData = await this.updatePrimitiveAttributeValidation(attribute, filteredUpdateData);
 
     const updatingFields: Partial<Attribute> = {
       ...validatedData,
@@ -454,10 +378,11 @@ class AttributeService extends BaseService {
     return { status: "success", data: attribute };
   }
 
-  private validateAttributeValidation(type: AttributeTypeEnum, validation?: ValidationRules, format?: AttributeFormatEnum) {
+  public validateAttributeValidation(type: AttributeTypeEnum, validation?: ValidationRules, format?: AttributeFormatEnum) {
     if (!validation) return;
     const { minLength, maxLength, minimum, maximum, pattern } = validation;
     const normalizedFormat = format && format.trim() ? format.trim() : undefined;
+
     switch (type) {
       case AttributeTypeEnum.STRING:
         if (minLength !== undefined && typeof minLength !== "number") {
@@ -523,7 +448,7 @@ class AttributeService extends BaseService {
     }
   }
 
-  private validateDefaultValue(attributeType: string, defaultValue: string) {
+  public validateDefaultValue(attributeType: string, defaultValue: string) {
     switch (attributeType) {
       case AttributeTypeEnum.STRING:
         if (typeof defaultValue !== "string" || !defaultValue.trim()) {
@@ -543,7 +468,7 @@ class AttributeService extends BaseService {
     }
   }
 
-  private validateEnumValue(enumValues: string[]) {
+  public validateEnumValue(enumValues: string[]) {
     if (!Array.isArray(enumValues) || enumValues.length === 0) {
       throw new ValidationError("enumValues must be a non-empty array of strings");
     }

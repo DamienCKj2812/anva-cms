@@ -157,7 +157,7 @@ function convertStringIdsToObjectIds(filter: any): any {
           (item: any) =>
             (key === "_id" || key.endsWith("._id") || key.endsWith("Id")) && typeof item === "string" && ObjectId.isValid(item)
               ? new ObjectId(item)
-              : item // Preserve non-ID values
+              : item, // Preserve non-ID values
         ),
       };
     }

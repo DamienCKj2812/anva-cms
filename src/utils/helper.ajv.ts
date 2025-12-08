@@ -124,7 +124,7 @@ export function filterSchemaByLocalizable(schema: any, localizable: boolean): an
 }
 
 // Need to sort the shared and translation correctly by contentId
-export function mergeTranslatableFields(shared: any, translation: any, schema): any {
+export function mergeTranslatableFields(shared: any, translation: any, schema: any): any {
   if (!schema) return shared ?? translation ?? null;
 
   // ARRAY CASE (index-based merge)

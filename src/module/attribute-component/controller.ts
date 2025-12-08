@@ -49,7 +49,7 @@ const attributeComponentController = (context: AppContext) => {
       if (!existingAttributeComponent) {
         throw new NotFoundError("existingAttributeComponent not found");
       }
-      const attributeComponent = await attributeComponentService.addAttribute(req.body, existingAttributeComponent);
+      const attributeComponent = await attributeComponentService.addAttributeInComponent(req.body, existingAttributeComponent);
       if (!attributeComponent) {
         throw new NotFoundError("attribute component not found");
       }

@@ -82,8 +82,13 @@ const attributeController = (context: AppContext) => {
     ...withDynamicFieldSettings(attributeService.collectionName, context),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const attribute = await attributeService.update(req.params.id, req.body);
-        res.status(200).json(successResponse(attribute));
+        const { id } = req.params;
+        const attribute = await attributeService.getById(id);
+        if (!attribute) {
+          throw new NotFoundError("attribute not found");
+        }
+        const updatedAttribute = await attributeService.updatePrimitiveAttribute(attribute, req.body);
+        res.status(200).json(successResponse(updatedAttribute));
       } catch (err) {
         await cleanupUploadedFiles(req);
         next(err);

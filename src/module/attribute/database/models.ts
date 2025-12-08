@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 export enum AttributeKindEnum {
   PRIMITIVE = "primitive",
   COMPONENT = "component",
+  COMPONENT_PRIMITIVE = "component-primitive",
   DYNAMIC_ZONE = "dynamic-zone",
 }
 
@@ -84,9 +85,7 @@ export interface UpdateAttributeBaseDto {
 }
 
 export interface UpdatePrimitiveAttributeDTO extends UpdateAttributeBaseDto {
-  attributeType?: AttributeTypeEnum;
   localizable?: boolean;
-  attributeFormat?: AttributeFormatEnum;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;

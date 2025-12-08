@@ -1,5 +1,5 @@
 import { ObjectId, Db, Collection, FindOptions } from "mongodb";
-import { CreateUserData, UpdateUserData, User } from "./models";
+import { ContextUser, CreateUserData, UpdateUserData, User } from "./models";
 import { getCurrentUserId, hashPassword } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
@@ -24,7 +24,7 @@ class UserService extends BaseService {
   }
 
   async init() {
-    this.tenantService = this.getService("TenantService")
+    this.tenantService = this.getService("TenantService");
     const existingAdmin = await this.collection.findOne({
       username: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
     });
@@ -40,12 +40,17 @@ class UserService extends BaseService {
       };
 
       await this.collection.insertOne(adminUser);
+      const currentUser: ContextUser = {
+        id: adminUser._id.toString(),
+        username: adminUser.username,
+      };
+      this.context.currentUser = currentUser;
 
       try {
         await this.tenantService.create({
           name: "default-tenant",
           createdBy: adminUser._id,
-        },);
+        });
       } catch (err) {
         console.error("Failed to create tenant for admin, rolling back:", err);
         await this.collection.deleteOne({ _id: adminUser._id });
@@ -176,7 +181,7 @@ class UserService extends BaseService {
     const updatedUser = await this.collection.findOneAndUpdate(
       { _id: userId },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
-      { returnDocument: "after", projection: { password: 0 } }
+      { returnDocument: "after", projection: { password: 0 } },
     );
 
     if (!updatedUser) {

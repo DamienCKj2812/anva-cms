@@ -4,20 +4,13 @@ import { validateObjectId } from "../../../utils/helper.mongo";
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
-import {
-  ContentCollection,
-  ContentCollectionTypeEnum,
-  CreateContentCollectionData,
-  DeleteContentCollectionResponse,
-  UpdateContentCollectionData,
-} from "./models";
+import { ContentCollection, ContentCollectionTypeEnum, CreateContentCollectionData, UpdateContentCollectionData } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Attribute, AttributeKindEnum } from "../../attribute/database/models";
 import { BaseService } from "../../core/base-service";
 import AttributeService from "../../attribute/database/services";
 import ContentService from "../../content/database/services";
 import AttributeComponentService from "../../attribute-component/database/services";
-import { ContentStatusEnum } from "../../content/database/models";
 
 class ContentCollectionService extends BaseService {
   private db: Db;
@@ -226,31 +219,18 @@ class ContentCollectionService extends BaseService {
     return result;
   }
 
-  private async deleteValidation(id: string): Promise<{ contentCollection: ContentCollection; nonDeletedAttributes: WithMetaData<Attribute> }> {
-    const contentCollection = await this.collection.findOne({ _id: new ObjectId(id) });
-    const userId = getCurrentUserId(this.context);
-    if (!contentCollection) {
-      throw new NotFoundError("content collection not found");
+  async delete(contentCollection: ContentCollection): Promise<{
+    status: "success" | "failed";
+    data: any;
+  }> {
+    const existingContents = await this.contentService.findMany({ contentCollectionId: contentCollection._id });
+    if (existingContents.length > 0) {
+      return { status: "failed", data: existingContents };
     }
-    if (!contentCollection.createdBy.equals(userId)) {
-      throw new ForbiddenError("You are not allowed to access this resources");
-    }
-    const attributes = await this.attributeService.getAll({
-      filter: { contentCollectionId: new ObjectId(id) },
-      projection: { _id: 1, key: 1, label: 1 },
-    });
-    return {
-      contentCollection,
-      nonDeletedAttributes: attributes,
-    };
-  }
-
-  async delete(id: string): Promise<DeleteContentCollectionResponse> {
-    const { contentCollection, nonDeletedAttributes } = await this.deleteValidation(id);
-    if (nonDeletedAttributes.data.length > 0) {
-      return { status: "failed", data: nonDeletedAttributes };
-    }
-    await this.collection.deleteOne({ _id: new ObjectId(id) });
+    await Promise.all([
+      this.attributeService.getCollection().deleteMany({ contentCollectionId: contentCollection._id }),
+      this.collection.findOneAndDelete({ _id: contentCollection._id }),
+    ]);
     return { status: "success", data: contentCollection };
   }
 

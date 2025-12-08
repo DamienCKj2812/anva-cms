@@ -39,6 +39,10 @@ class ContentTranslationService extends BaseService {
     this.contentService = this.getService("ContentService");
   }
 
+  getCollection(): Collection<ContentTranslation> {
+    return this.collection;
+  }
+
   private async createValidation(
     createData: CreateContentTranslationData,
     content: Content,

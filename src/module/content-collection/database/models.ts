@@ -22,11 +22,6 @@ export interface UpdateContentCollectionData {
   displayName?: string;
 }
 
-export interface DeleteContentCollectionResponse {
-  status: "success" | "failed";
-  data: any;
-}
-
 export interface CreateContentCollectionData {
   type: ContentCollectionTypeEnum;
   slug: string;

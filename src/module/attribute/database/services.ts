@@ -29,9 +29,12 @@ class AttributeService extends BaseService {
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdatePrimitiveAttributeDTO> = new Set([
     "label",
     "required",
+    "attributeType",
+    "localizable",
+    "attributeFormat",
     "defaultValue",
     "enumValues",
-    "localizable",
+    "validation",
   ] as const);
   private contentCollectionService: ContentCollectionService;
   private attributeComponentService: AttributeComponentService;
@@ -45,6 +48,10 @@ class AttributeService extends BaseService {
   async init() {
     this.contentCollectionService = this.getService("ContentCollectionService");
     this.attributeComponentService = this.getService("AttributeComponentService");
+  }
+
+  getCollection(): Collection<Attribute> {
+    return this.collection;
   }
 
   private async createPrimitiveAttributeValidation(
@@ -402,19 +409,15 @@ class AttributeService extends BaseService {
     return data;
   }
 
-  async update(id: string, data: UpdatePrimitiveAttributeDTO): Promise<Attribute> {
-    validateObjectId(id);
-    const attribute = await this.getById(id);
-    if (!attribute) {
-      throw new NotFoundError("attribute not found");
-    }
+  async update(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<Attribute> {
     const filteredUpdateData = filterFields(data, AttributeService.ALLOWED_UPDATE_FIELDS);
     const validatedData = await this.updateValidation(attribute, filteredUpdateData);
+
     const updatingFields: Partial<Attribute> = {
       ...validatedData,
     };
     const updatedAttribute = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
+      { _id: attribute._id },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
       { returnDocument: "after" },
     );

@@ -31,6 +31,7 @@ export interface ValidationRules {
 export interface Attribute {
   _id: ObjectId;
   contentCollectionId?: ObjectId;
+  // Not modifieable
   key: string;
   label: string;
   attributeKind: AttributeKindEnum;
@@ -83,12 +84,12 @@ export interface UpdateAttributeBaseDto {
 }
 
 export interface UpdatePrimitiveAttributeDTO extends UpdateAttributeBaseDto {
-  // attributeType: AttributeTypeEnum;  Not supported yet
+  attributeType?: AttributeTypeEnum;
   localizable?: boolean;
-  // attributeFormat?: AttributeFormatEnum; Not supported yet
+  attributeFormat?: AttributeFormatEnum;
   defaultValue?: any;
   enumValues?: string[];
-  // validation?: ValidationRules; Not supported yet
+  validation?: ValidationRules;
 }
 
 export interface DeleteAttributeResponse {

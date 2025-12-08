@@ -76,7 +76,32 @@ const tenantLocaleController = (context: AppContext) => {
 
   router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const updatedtenantLocaleLocale = await tenantLocaleService.update(req.params.id, req.body);
+      const { id } = req.params;
+      const tenantLocale = await tenantLocaleService.getById(id);
+      if (!tenantLocale) {
+        throw new NotFoundError("TenantLocale not found");
+      }
+      if (tenantLocale.isDefault) {
+        throw new ValidationError("You cannot modify the default locale");
+      }
+      const updatedtenantLocaleLocale = await tenantLocaleService.update(tenantLocale, req.body);
+      res.json(successResponse(updatedtenantLocaleLocale));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const tenantLocale = await tenantLocaleService.getById(id);
+      if (!tenantLocale) {
+        throw new NotFoundError("TenantLocale not found");
+      }
+      if (tenantLocale.isDefault) {
+        throw new ValidationError("You cannot delete the default locale");
+      }
+      const updatedtenantLocaleLocale = await tenantLocaleService.delete(tenantLocale);
       res.json(successResponse(updatedtenantLocaleLocale));
     } catch (err) {
       next(err);

@@ -139,7 +139,10 @@ class TenantLocaleService extends BaseService {
         throw new ValidationError("displayName already exists for this tenant");
       }
     }
-    if ("locale" in data) {
+    if ("locale" in data && locale) {
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(locale)) {
+        throw new ValidationError("locale can only contain letters, numbers, and single hyphens (no spaces)");
+      }
       if (typeof locale !== "string" || !locale.trim()) {
         throw new ValidationError("locale must be a non-empty string");
       }
@@ -158,21 +161,17 @@ class TenantLocaleService extends BaseService {
     return data;
   }
 
-  async update(id: string, data: UpdateTenantLocaleData): Promise<TenantLocale> {
-    const tenantLocale = await this.getById(id);
-    if (!tenantLocale) {
-      throw new NotFoundError("TenantLocale not found");
-    }
+  async update(tenantLocale: TenantLocale, data: UpdateTenantLocaleData): Promise<TenantLocale> {
     const filteredUpdateData = filterFields(data, TenantLocaleService.ALLOWED_UPDATE_FIELDS);
     const validatedData = await this.updateValidation(tenantLocale, filteredUpdateData);
     const updatingFields: Partial<TenantLocale> = {
       ...validatedData,
     };
     if (filteredUpdateData.locale) {
-      await this.contentTranslationService.updateMany({ tenantId: tenantLocale.tenantId }, { $set: { locale: filteredUpdateData.locale } });
+      await this.contentTranslationService.updateMany({ tenantLocaleId: tenantLocale._id }, { $set: { locale: filteredUpdateData.locale } });
     }
     const updatedTenantLocale = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
+      { _id: tenantLocale._id },
       { $set: updatingFields, $currentDate: { updatedAt: true } },
       { returnDocument: "after" },
     );
@@ -180,6 +179,20 @@ class TenantLocaleService extends BaseService {
       throw new NotFoundError("failed to update tenantLocale");
     }
     return updatedTenantLocale;
+  }
+
+  async delete(tenantLocale: TenantLocale): Promise<TenantLocale> {
+    await this.contentTranslationService.getCollection().deleteMany({ tenantLocaleId: tenantLocale._id });
+
+    const deletedTenantLocale = await this.collection.findOneAndDelete({
+      _id: tenantLocale._id,
+    });
+
+    if (!deletedTenantLocale) {
+      throw new NotFoundError("failed to delete tenantLocale");
+    }
+
+    return deletedTenantLocale;
   }
 }
 

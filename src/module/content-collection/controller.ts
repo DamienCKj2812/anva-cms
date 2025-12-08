@@ -61,11 +61,16 @@ const contentCollectionController = (context: AppContext) => {
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { status, data } = await contentCollectionService.delete(req.params.id);
+      const { id } = req.params;
+      const contentCollection = await contentCollectionService.getById(id);
+      if (!contentCollection) {
+        throw new NotFoundError("contentCollection not found");
+      }
+      const { status, data } = await contentCollectionService.delete(contentCollection);
       if (status == "failed") {
         return res
           .status(400)
-          .json(errorResponse("Some attributes are still under this content collection", { name: "ValidationError", status: 400, errorData: data }));
+          .json(errorResponse("Some content are still under this content collection", { name: "ValidationError", status: 400, errorData: data }));
       }
       res.status(200).json(successResponse(data));
     } catch (err) {

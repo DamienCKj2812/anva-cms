@@ -44,6 +44,10 @@ class ContentService extends BaseService {
     this.tenantLocaleService = this.getService("TenantLocaleService");
   }
 
+  getCollection(): Collection<Content> {
+    return this.collection;
+  }
+
   private async createValidation(createData: CreateContentData, contentCollection: ContentCollection, fullSchema: any): Promise<CreateContentData> {
     const { status, data } = createData;
     if (!("status" in createData)) {

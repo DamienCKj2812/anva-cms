@@ -87,7 +87,11 @@ const attributeController = (context: AppContext) => {
         if (!attribute) {
           throw new NotFoundError("attribute not found");
         }
-        const updatedAttribute = await attributeService.updatePrimitiveAttribute(attribute, req.body);
+        const contentCollection = await contentCollectionService.findOne({ _id: attribute.contentCollectionId });
+        if (!contentCollection) {
+          throw new NotFoundError("contentCollection not found");
+        }
+        const updatedAttribute = await attributeService.updatePrimitiveAttribute(attribute, req.body, contentCollection);
         res.status(200).json(successResponse(updatedAttribute));
       } catch (err) {
         await cleanupUploadedFiles(req);
@@ -98,7 +102,16 @@ const attributeController = (context: AppContext) => {
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { status, data } = await attributeService.delete(req.params.id);
+      const { id } = req.params;
+      const attribute = await attributeService.getById(id);
+      if (!attribute) {
+        throw new NotFoundError("attribute not found");
+      }
+      const contentCollection = await contentCollectionService.findOne({ _id: attribute.contentCollectionId });
+      if (!contentCollection) {
+        throw new NotFoundError("contentCollection not found");
+      }
+      const { status, data } = await attributeService.delete(attribute, contentCollection);
       res.status(200).json(successResponse(data));
     } catch (err) {
       next(err);

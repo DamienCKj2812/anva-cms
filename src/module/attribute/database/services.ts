@@ -12,7 +12,6 @@ import {
   AttributeTypeEnum,
   CreateComponentAttributeDTO,
   CreatePrimitiveAttributeDTO,
-  DeleteAttributeResponse,
   UpdatePrimitiveAttributeDTO,
   ValidationRules,
 } from "./models";
@@ -21,6 +20,9 @@ import { ContentCollection } from "../../content-collection/database/models";
 import { BaseService } from "../../core/base-service";
 import AttributeComponentService from "../../attribute-component/database/services";
 import { AttributeComponent } from "../../attribute-component/database/models";
+import { Content } from "../../content/database/models";
+import ContentService from "../../content/database/services";
+import ContentTranslationService from "../../content-translation/database/services";
 
 class AttributeService extends BaseService {
   private db: Db;
@@ -44,6 +46,8 @@ class AttributeService extends BaseService {
 
   private contentCollectionService: ContentCollectionService;
   private attributeComponentService: AttributeComponentService;
+  private contentService: ContentService;
+  private contentTranslationService: ContentTranslationService;
 
   constructor(context: AppContext) {
     super(context);
@@ -54,6 +58,8 @@ class AttributeService extends BaseService {
   async init() {
     this.contentCollectionService = this.getService("ContentCollectionService");
     this.attributeComponentService = this.getService("AttributeComponentService");
+    this.contentService = this.getService("ContentService");
+    this.contentTranslationService = this.getService("ContentTranslationService");
   }
 
   getCollection(): Collection<Attribute> {
@@ -148,6 +154,7 @@ class AttributeService extends BaseService {
     const newAttribute: Attribute = {
       _id: new ObjectId(),
       contentCollectionId: contentCollection._id,
+      path: validatedData.key,
       key: validatedData.key,
       label: validatedData.label,
       attributeKind: AttributeKindEnum.PRIMITIVE,
@@ -167,7 +174,7 @@ class AttributeService extends BaseService {
     if (!result) {
       throw new NotFoundError("Failed to create the attribute");
     }
-    await this.contentCollectionService.addSchema(contentCollection._id?.toString()!, newAttribute);
+    await this.contentCollectionService.buildSchema(contentCollection);
     await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
     return newAttribute;
   }
@@ -215,16 +222,19 @@ class AttributeService extends BaseService {
     };
   }
 
-  async createComponentAttribute(data: CreateComponentAttributeDTO, contentCollection: ContentCollection): Promise<Attribute> {
+  async createComponentAttribute(data: any, contentCollection: any): Promise<Attribute> {
     const { validatedData, attributeComponent } = await this.createComponentAttributeValidation(data, contentCollection);
-    const createdBy = getCurrentUserId(this.context);
+    const createdBy = new ObjectId(); // Placeholder for getCurrentUserId(this.context);
 
-    console.log("Creating component attribute: ", validatedData);
+    // 1. Calculate the new placeholder's path (Root-level path is just its key)
+    const attributePath = validatedData.key;
     const attributeCount = await this.collection.countDocuments({ contentCollectionId: contentCollection._id });
 
     const newAttribute: Attribute = {
       _id: new ObjectId(),
       contentCollectionId: contentCollection._id,
+      path: attributePath, // Set the path for the placeholder
+
       key: validatedData.key,
       label: validatedData.label,
       attributeKind: AttributeKindEnum.COMPONENT,
@@ -236,12 +246,29 @@ class AttributeService extends BaseService {
       createdAt: new Date(),
       updatedAt: null,
     };
+
+    //  Insert the new placeholder attribute (CRITICAL STEP)
     const result = await this.collection.insertOne(newAttribute);
     if (!result) {
-      throw new NotFoundError("Failed to create the component attribute");
+      throw new Error("Failed to create the component attribute");
     }
-    await this.contentCollectionService.addSchema(contentCollection._id?.toString()!, newAttribute);
+
+    //  RECURSIVELY CALCULATE ALL NESTED PATHS
+    const allNestedPathUpdates = await this.buildPathsRecursively(
+      newAttribute, // Start with the newly inserted attribute
+      newAttribute.path, // The base path for recursion
+    );
+
+    //  Apply all path changes to the nested attributes
+    const updatePromises = allNestedPathUpdates.map((update) => {
+      // Use $set to update the 'path' field for every affected attribute
+      return this.collection.findOneAndUpdate({ _id: update.id }, { $set: { path: update.path } });
+    });
+
+    await Promise.all(updatePromises);
+    await this.contentCollectionService.buildSchema(contentCollection);
     await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
+
     return newAttribute;
   }
 
@@ -330,7 +357,7 @@ class AttributeService extends BaseService {
     return data;
   }
 
-  async updatePrimitiveAttribute(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<Attribute> {
+  async updatePrimitiveAttribute(attribute: Attribute, data: UpdatePrimitiveAttributeDTO, contentCollection: ContentCollection): Promise<Attribute> {
     if (data.validation) {
       data.validation = filterFields(data.validation, AttributeService.ALLOWED_UPDATE_VALIDATION_FIELDS);
     }
@@ -348,33 +375,43 @@ class AttributeService extends BaseService {
     if (!updatedAttribute) {
       throw new NotFoundError("failed to update contentCollection");
     }
-    await this.contentCollectionService.updateSchema(attribute, updatedAttribute);
+    await this.contentCollectionService.buildSchema(contentCollection);
     return updatedAttribute;
   }
 
-  private async deleteValidation(id: string): Promise<{ attribute: Attribute; contentCollection: ContentCollection }> {
-    const attribute = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { key: 1, contentCollectionId: 1 } });
-    if (!attribute) {
-      throw new NotFoundError("attribute not found");
+  async delete(attribute: Attribute, contentCollection: ContentCollection): Promise<{ status: "success" | "failed"; data: any }> {
+    if (attribute.attributeKind == AttributeKindEnum.COMPONENT_PRIMITIVE) {
+      throw new BadRequestError(
+        "Cannot delete an attribute that is defined inside a reusable component blueprint. Delete the attribute from the component blueprint instead.",
+      );
     }
-    const contentCollection = await this.contentCollectionService.getById(attribute.contentCollectionId?.toString() || "");
-    if (!contentCollection) {
-      throw new NotFoundError("content collection not found for this attribute setting");
-    }
-    if (!contentCollection.schema?.properties?.[attribute.key]) {
-      throw new NotFoundError("this attribute is not found in the schema");
-    }
-    return {
-      attribute,
-      contentCollection,
-    };
-  }
+    const unsetObject: any = {};
+    const contentCollectionId = contentCollection._id!;
+    if (attribute.attributeKind === AttributeKindEnum.COMPONENT) {
+      const allSchemaPaths = await this.buildPathsRecursively(attribute, attribute.path);
 
-  async delete(id: string): Promise<DeleteAttributeResponse> {
-    const { attribute, contentCollection } = await this.deleteValidation(id);
-    await this.collection.deleteOne({ _id: new ObjectId(id) });
-    await this.contentCollectionService.deleteSchema(contentCollection, attribute.key);
-    await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
+      for (const update of allSchemaPaths) {
+        const dbPath = `data.${update.path}`;
+        unsetObject[dbPath] = "";
+      }
+    } else {
+      const dbPath = `data.${attribute.path}`;
+      unsetObject[dbPath] = "";
+    }
+    const query = { contentCollectionId: contentCollectionId };
+    const unsetOperation = { $unset: unsetObject };
+
+    console.log({ unsetOperation });
+
+    await Promise.all([
+      this.contentService.getCollection().updateMany(query, unsetOperation),
+      this.contentTranslationService.getCollection().updateMany(query, unsetOperation),
+    ]);
+
+    await this.collection.deleteOne({ _id: attribute._id });
+    await this.contentCollectionService.updateAttributeCount(contentCollectionId);
+    await this.contentCollectionService.buildSchema(contentCollection);
+
     return { status: "success", data: attribute };
   }
 
@@ -507,7 +544,6 @@ class AttributeService extends BaseService {
             key: 1,
             attributeKind: 1,
             componentSchema: "$component.schema",
-            componentRepeatable: "$component.repeatable",
           },
         },
       ])
@@ -523,6 +559,45 @@ class AttributeService extends BaseService {
     }
 
     return schema;
+  }
+
+  async buildPathsRecursively(targetAttribute: Attribute, newBasePath: string): Promise<{ id: ObjectId; path: string }[]> {
+    const updates: { id: ObjectId; path: string }[] = [];
+
+    updates.push({
+      id: targetAttribute._id,
+      path: newBasePath,
+    });
+
+    if (targetAttribute.attributeKind === AttributeKindEnum.COMPONENT) {
+      const componentRefId = targetAttribute.componentRefId;
+
+      if (componentRefId) {
+        const nestedComponent = await this.attributeComponentService.findOne({ _id: componentRefId });
+
+        if (nestedComponent && nestedComponent.attributes?.length) {
+          let pathPrefix = newBasePath;
+
+          if (nestedComponent.repeatable) {
+            pathPrefix = `${newBasePath}[]`;
+          }
+
+          const nestedAttributes = await this.findMany({
+            _id: { $in: nestedComponent.attributes },
+          });
+
+          for (const childAttribute of nestedAttributes) {
+            const childPath = `${pathPrefix}.${childAttribute.key}`;
+
+            const childUpdates = await this.buildPathsRecursively(childAttribute, childPath);
+
+            updates.push(...childUpdates);
+          }
+        }
+      }
+    }
+
+    return updates;
   }
 }
 

@@ -1,6 +1,11 @@
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import { ValidationError } from "./helper.errors";
+import { Attribute } from "../module/attribute/database/models";
+
+export enum AjvSchemaKeywordEnum {
+  TYPE = "type",
+}
 
 const ajv = new Ajv({ allErrors: true, strict: false });
 
@@ -66,6 +71,53 @@ export function recursiveReplace(target: any, source: any): any {
   }
 
   return source;
+}
+
+export function recursiveKeyCleaner(data: any, keyToDelete: string): any {
+  // 1. Base Case: If the data is a primitive, return it as is.
+  if (typeof data !== "object" || data === null) {
+    return data;
+  }
+
+  // 2. Handle Arrays
+  if (Array.isArray(data)) {
+    // Traverse each item and apply the cleaning function recursively.
+    return data.map((item) => recursiveKeyCleaner(item, keyToDelete));
+  }
+
+  // 3. Handle Objects
+  const cleanedObject = {};
+  for (const key in data) {
+    if (data.hasOwnProperty(key)) {
+      const value = data[key];
+
+      // --- DELETION RULES ---
+
+      // Rule 1: Remove if the KEY name matches the specified criteria
+      if (key === keyToDelete) {
+        // Skip this key/value pair.
+        continue;
+      }
+
+      // Rule 2: Remove if the VALUE is an empty string
+      if (value === "") {
+        // Skip this key/value pair.
+        continue;
+      }
+
+      // --- RECURSION ---
+
+      // If the value is a nested object or array, recursively clean it.
+      if (typeof value === "object" && value !== null) {
+        cleanedObject[key] = recursiveKeyCleaner(value, keyToDelete);
+      } else {
+        // Otherwise, copy the key-value pair as is.
+        cleanedObject[key] = value;
+      }
+    }
+  }
+
+  return cleanedObject;
 }
 
 export function filterSchemaByLocalizable(schema: any, localizable: boolean): any {

@@ -179,10 +179,13 @@ class AttributeComponentService extends BaseService {
     const validatedData = await this.addAttributeValidation(data, attributeComponent);
     const createdBy = getCurrentUserId(this.context);
 
+    const initialPath = validatedData.key;
+
     console.log("adding primitive attribute into the component: ", validatedData);
     const newAttribute: Attribute = {
       _id: new ObjectId(),
       key: validatedData.key,
+      path: initialPath,
       label: validatedData.label,
       attributeKind: AttributeKindEnum.COMPONENT_PRIMITIVE,
       componentRefId: attributeComponent._id,
@@ -198,16 +201,39 @@ class AttributeComponentService extends BaseService {
       createdAt: new Date(),
       updatedAt: null,
     };
+
     await this.attributeService.getCollection().insertOne(newAttribute);
     const updatedComponent = await this.collection.findOneAndUpdate(
       { _id: attributeComponent._id },
       { $push: { attributes: newAttribute._id } },
-      { returnDocument: "after" }, // returns the updated document
+      { returnDocument: "after" },
     );
     if (!updatedComponent) {
       throw new Error("Failed to add attribute to component");
     }
-    await this.addSchema(attributeComponent._id, newAttribute);
+
+    const componentPlaceholders = await this.attributeService.findMany({
+      componentRefId: attributeComponent._id,
+      attributeKind: AttributeKindEnum.COMPONENT,
+    });
+
+    const updatePromises: Promise<any>[] = [];
+
+    for (const placeholder of componentPlaceholders) {
+      const newBasePath = placeholder.path;
+
+      const allNestedPathUpdates = await this.attributeService.buildPathsRecursively(placeholder, newBasePath);
+
+      const batchUpdates = allNestedPathUpdates.map((update) => {
+        return this.attributeService.getCollection().findOneAndUpdate({ _id: update.id }, { $set: { path: update.path } });
+      });
+      updatePromises.push(...batchUpdates);
+    }
+
+    await Promise.all(updatePromises);
+
+    await this.buildSchemaForComponent(updatedComponent);
+
     return updatedComponent;
   }
 
@@ -234,105 +260,81 @@ class AttributeComponentService extends BaseService {
     return this.collection.find(filter, options).toArray();
   }
 
-  async addSchema(id: ObjectId, attribute: Attribute): Promise<AttributeComponent> {
-    const attributeComponent = await this.findOne({ _id: id });
-    if (!attributeComponent) {
-      throw new NotFoundError("Attribute component not found");
-    }
+  async buildSchemaForComponent(attributeComponent: AttributeComponent): Promise<any> {
     const isRepeatable = attributeComponent.repeatable;
-    let schema = attributeComponent.schema;
-    if (!schema) {
-      if (isRepeatable) {
-        schema = {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {},
-            required: [],
-            additionalProperties: false,
-          },
-        };
-      } else {
-        schema = {
-          type: "object",
-          properties: {},
-          required: [],
-          additionalProperties: false,
-        };
-      }
-    }
-    let targetSchema;
+
+    let schema: any;
+    let targetSchema: any;
 
     if (isRepeatable) {
-      schema.type = "array";
-
-      schema.items ??= {};
-      schema.items.type = "object";
-      schema.items.properties ??= {};
-      schema.items.required ??= [];
-      if (schema.items.additionalProperties === undefined) schema.items.additionalProperties = false;
-
+      schema = {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {},
+          required: [] as string[],
+          additionalProperties: false,
+        },
+      };
       targetSchema = schema.items;
     } else {
-      schema.type = "object";
-
-      schema.properties ??= {};
-      schema.required ??= [];
-      if (schema.additionalProperties === undefined) schema.additionalProperties = false;
-
+      schema = {
+        type: "object",
+        properties: {},
+        required: [] as string[],
+        additionalProperties: false,
+      };
       targetSchema = schema;
     }
 
-    if (attribute.attributeKind !== AttributeKindEnum.COMPONENT_PRIMITIVE) {
-      throw new ValidationError("You can only add component primitive type to a component");
-    }
+    const attributes = await this.attributeService.findMany(
+      {
+        _id: { $in: attributeComponent.attributes },
+      },
+      { sort: { position: 1 } },
+    );
 
-    const property: any = {
-      type: attribute.attributeType?.toLowerCase(),
-    };
+    for (const attribute of attributes) {
+      if (attribute.attributeKind !== AttributeKindEnum.PRIMITIVE && attribute.attributeKind !== AttributeKindEnum.COMPONENT_PRIMITIVE) {
+        throw new Error(`Component schema cannot contain non-primitive attribute kind: ${attribute.attributeKind} for key: ${attribute.key}`);
+      }
 
-    if (attribute.attributeFormat) {
-      property.format = attribute.attributeFormat;
-    }
+      if (!attribute.attributeType) {
+        console.warn(`Skipping attribute ${attribute.key}: Missing attributeType.`);
+        continue;
+      }
 
-    if (attribute.validation) {
-      const v = attribute.validation;
-      if (v.minLength !== undefined) property.minLength = v.minLength;
-      if (v.maxLength !== undefined) property.maxLength = v.maxLength;
-      if (v.minimum !== undefined) property.minimum = v.minimum;
-      if (v.maximum !== undefined) property.maximum = v.maximum;
-      if (v.pattern !== undefined) property.pattern = v.pattern;
-    }
+      const property: any = {
+        type: attribute.attributeType,
+      };
 
-    if (attribute.enumValues?.length) {
-      property.enum = attribute.enumValues;
-    }
+      // Add standard primitive properties
+      if (attribute.attributeFormat) property.format = attribute.attributeFormat;
+      if (attribute.enumValues?.length) property.enum = attribute.enumValues;
+      if (attribute.defaultValue !== undefined) property.default = attribute.defaultValue;
 
-    if (attribute.defaultValue !== undefined) {
-      property.default = attribute.defaultValue;
-    }
+      property.localizable = attribute.localizable;
 
-    property.localizable = attribute.localizable;
+      // Apply validation rules
+      if (attribute.validation) {
+        Object.assign(property, attribute.validation);
+      }
 
-    targetSchema.properties[attribute.key] = property;
+      targetSchema.properties[attribute.key] = property;
 
-    if (attribute.required && !targetSchema.required.includes(attribute.key)) {
-      targetSchema.required.push(attribute.key);
+      if (attribute.required) {
+        targetSchema.required.push(attribute.key);
+      }
     }
 
     const updated = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      {
-        $set: {
-          schema,
-          updatedAt: new Date(),
-        },
-      },
+      { _id: attributeComponent._id },
+      { $set: { schema, updatedAt: new Date() } },
       { returnDocument: "after" },
     );
 
     if (!updated) {
-      throw new Error("Failed to update attribute component schema");
+      throw new Error("Update schema into component failed");
     }
 
     return updated;

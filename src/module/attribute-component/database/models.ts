@@ -3,7 +3,7 @@ import { ObjectId } from "mongodb";
 export interface AttributeComponent {
   _id: ObjectId;
   tenantId: ObjectId;
-  key: string;
+  key: string; // Just for uniquely identify, not used in the schema, use the attribute.key as source of trust
   label: string;
   category: string;
   schema: any;

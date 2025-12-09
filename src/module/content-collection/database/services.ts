@@ -35,6 +35,10 @@ class ContentCollectionService extends BaseService {
     this.attributeComponentService = this.getService("AttributeComponentService");
   }
 
+  getCollection(): Collection<ContentCollection> {
+    return this.collection;
+  }
+
   private async createValidation(data: CreateContentCollectionData): Promise<CreateContentCollectionData> {
     const { tenantId, slug, displayName, type } = data;
     const userId = getCurrentUserId(this.context);
@@ -234,208 +238,53 @@ class ContentCollectionService extends BaseService {
     return { status: "success", data: contentCollection };
   }
 
-  async addSchema(id: string, attribute: Attribute): Promise<ContentCollection> {
-    const contentCollection = await this.getById(id);
-    if (!contentCollection) {
-      throw new NotFoundError("Content collection not found");
-    }
+  async buildSchema(contentCollection: ContentCollection): Promise<ContentCollection> {
+    const attributes = await this.attributeService.findMany({ contentCollectionId: contentCollection._id }, { sort: { position: 1 } });
 
-    // Base schema
-    const schema = contentCollection.schema ?? {
+    const schema = {
       type: "object",
       properties: {},
-      required: [],
+      required: [] as string[],
       additionalProperties: false,
     };
 
-    // Ensure base structure
-    schema.type = "object";
-    schema.properties ||= {};
-    schema.required ||= [];
-    if (schema.additionalProperties === undefined) {
-      schema.additionalProperties = false;
-    }
-
-    let property: any = null;
-
-    // PRIMITIVE ATTRIBUTE
-    if (attribute.attributeKind === AttributeKindEnum.PRIMITIVE) {
-      property = { type: attribute.attributeType?.toLowerCase() };
-
-      if (attribute.attributeFormat) property.format = attribute.attributeFormat;
-
-      if (attribute.validation) {
-        const v = attribute.validation;
-        if (v.minLength !== undefined) property.minLength = v.minLength;
-        if (v.maxLength !== undefined) property.maxLength = v.maxLength;
-        if (v.minimum !== undefined) property.minimum = v.minimum;
-        if (v.maximum !== undefined) property.maximum = v.maximum;
-        if (v.pattern !== undefined) property.pattern = v.pattern;
-      }
-
-      if (attribute.enumValues?.length) property.enum = attribute.enumValues;
-      if (attribute.defaultValue !== undefined) property.default = attribute.defaultValue;
-
-      // Add localizable flag
-      property.localizable = attribute.localizable;
-    }
-
-    // COMPONENT ATTRIBUTE
-    else if (attribute.attributeKind === AttributeKindEnum.COMPONENT) {
-      if (!attribute.componentRefId) {
-        throw new ValidationError("componentRefId is required for component attribute");
-      }
-
-      const component = await this.attributeComponentService.findOne({ _id: attribute.componentRefId });
-      if (!component) {
-        throw new NotFoundError("Component not found");
-      }
-
-      // POINTER ONLY — DO NOT RESOLVE SCHEMA HERE
-      property = {
-        type: "component",
-        componentRefId: attribute.componentRefId,
-        repeatable: component.repeatable,
+    for (const attribute of attributes) {
+      const prop: any = {
+        type: attribute.attributeType,
       };
-    }
 
-    // Assign property to schema
-    schema.properties[attribute.key] = property;
-
-    // Add to required if needed
-    if (attribute.required && !schema.required.includes(attribute.key)) {
-      schema.required.push(attribute.key);
-    }
-
-    // Update the content collection
-    const updated = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      {
-        $set: {
-          schema,
-          updatedAt: new Date(),
-        },
-      },
-      { returnDocument: "after" },
-    );
-
-    if (!updated) throw new Error("Failed to update content collection schema");
-
-    return updated;
-  }
-
-  async updateSchema(oldAttribute: Attribute, attribute: Attribute): Promise<ContentCollection> {
-    const contentCollection = await this.getById(oldAttribute.contentCollectionId?.toString() || "");
-    if (!contentCollection) throw new NotFoundError("Content collection not found");
-
-    const schema = contentCollection.schema ?? {
-      type: "object",
-      properties: {},
-      required: [],
-      additionalProperties: false,
-    };
-
-    schema.type = "object";
-    schema.properties ||= {};
-    schema.required ||= [];
-    if (schema.additionalProperties === undefined) schema.additionalProperties = false;
-
-    let property: any;
-
-    switch (attribute.attributeKind) {
-      case AttributeKindEnum.PRIMITIVE:
-        property = { type: attribute.attributeType?.toLowerCase() };
-
-        if (attribute.attributeFormat) property.format = attribute.attributeFormat;
+      if (attribute.attributeKind === AttributeKindEnum.PRIMITIVE) {
+        if (attribute.attributeFormat) prop.format = attribute.attributeFormat;
+        if (attribute.enumValues) prop.enum = attribute.enumValues;
+        if (attribute.defaultValue !== undefined) prop.default = attribute.defaultValue;
 
         if (attribute.validation) {
-          const v = attribute.validation;
-          if (v.minLength !== undefined) property.minLength = v.minLength;
-          if (v.maxLength !== undefined) property.maxLength = v.maxLength;
-          if (v.minimum !== undefined) property.minimum = v.minimum;
-          if (v.maximum !== undefined) property.maximum = v.maximum;
-          if (v.pattern !== undefined) property.pattern = v.pattern;
+          Object.assign(prop, attribute.validation);
         }
 
-        if (attribute.enumValues?.length) property.enum = attribute.enumValues;
-        if (attribute.defaultValue !== undefined) property.default = attribute.defaultValue;
+        prop.localizable = attribute.localizable;
+      } else if (attribute.attributeKind === AttributeKindEnum.COMPONENT) {
+        if (!attribute.componentRefId) {
+          throw new ValidationError("componentRefId is required for component attribute");
+        }
+        prop.componentRefId = attribute.componentRefId;
+      }
 
-        // Add localizable flag
-        property.localizable = attribute.localizable;
-        break;
+      if (attribute.required) {
+        schema.required.push(attribute.key);
+      }
 
-      case AttributeKindEnum.COMPONENT:
-        if (!attribute.componentRefId) throw new ValidationError("componentRefId is required for component attribute");
-
-        const component = await this.attributeComponentService.findOne({ _id: attribute.componentRefId });
-        if (!component) throw new NotFoundError("Component not found");
-
-        // Store only pointer
-        property = {
-          type: "component",
-          componentRefId: attribute.componentRefId,
-          repeatable: component.repeatable,
-        };
-        break;
-
-      default:
-        throw new ValidationError("Unsupported attribute kind");
+      schema.properties[attribute.key] = prop;
     }
 
-    // Update property in schema
-    schema.properties[oldAttribute.key] = property;
-
-    // Update required array
-    const requiredSet = new Set(schema.required);
-    if (attribute.required) requiredSet.add(oldAttribute.key);
-    else requiredSet.delete(oldAttribute.key);
-    schema.required = Array.from(requiredSet);
-
-    // Save updated schema
     const updated = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(oldAttribute.contentCollectionId) },
+      { _id: contentCollection._id },
       { $set: { schema, updatedAt: new Date() } },
       { returnDocument: "after" },
     );
 
-    if (!updated) throw new Error("Failed to update content collection schema");
-
-    return updated;
-  }
-
-  async deleteSchema(contentCollection: ContentCollection, attributeKey: string): Promise<ContentCollection> {
-    if (!contentCollection) {
-      throw new NotFoundError("Content collection not found");
-    }
-    const schema = contentCollection.schema || {
-      type: "object",
-      properties: {},
-      required: [],
-      additionalProperties: false,
-    };
-    if (!schema.properties || !schema.properties[attributeKey]) {
-      throw new NotFoundError(`Attribute "${attributeKey}" not found in schema`);
-    }
-
-    delete schema.properties[attributeKey];
-
-    // Remove from required array if exists
-    if (schema.required) {
-      schema.required = schema.required.filter((key: string) => key !== attributeKey);
-    }
-
-    const updated = await this.collection.findOneAndUpdate(
-      { _id: new ObjectId(contentCollection._id) },
-      {
-        $set: {
-          schema,
-          updatedAt: new Date(),
-        },
-      },
-      { returnDocument: "after" },
-    );
     if (!updated) {
-      throw new Error("Failed to update content collection schema after delete");
+      throw new Error("Update schema into content collection failed");
     }
 
     return updated;

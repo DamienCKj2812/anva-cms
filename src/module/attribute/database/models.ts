@@ -32,6 +32,7 @@ export interface ValidationRules {
 export interface Attribute {
   _id: ObjectId;
   contentCollectionId?: ObjectId;
+  path: string; // Store the path in annotation format
   // Not modifieable
   key: string;
   label: string;
@@ -47,7 +48,8 @@ export interface Attribute {
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
-  localizable: boolean;
+  localizable?: boolean;
+  repeatable?: boolean;
   position: number;
   createdBy: ObjectId;
   createdAt: Date;
@@ -72,6 +74,7 @@ export interface CreatePrimitiveAttributeDTO extends CreateAttributeBaseDTO {
 // used when the user add a component as field, just a placeholder, hence no need to store the value
 export interface CreateComponentAttributeDTO extends CreateAttributeBaseDTO {
   componentRefId: string;
+  repeatable?: boolean;
 }
 
 // used when the user add a dynamic as field, just a placeholder, hence no need to store the value
@@ -89,9 +92,4 @@ export interface UpdatePrimitiveAttributeDTO extends UpdateAttributeBaseDto {
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
-}
-
-export interface DeleteAttributeResponse {
-  status: "success" | "failed";
-  data: any;
 }

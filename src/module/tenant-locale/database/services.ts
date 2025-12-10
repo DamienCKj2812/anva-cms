@@ -36,11 +36,18 @@ class TenantLocaleService extends BaseService {
   private async createValidation(data: CreateTenantLocaleData, tenant: Tenant): Promise<CreateTenantLocaleData> {
     const { locale, displayName } = data;
 
-    if (!("locale" in data)) {
-      throw new ValidationError('"locale" field is required');
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/i.test(locale)) {
+      throw new ValidationError("locale can only contain letters, numbers, and single hyphens (no spaces)");
     }
     if (typeof locale !== "string" || !locale.trim()) {
       throw new ValidationError("locale must be a non-empty string");
+    }
+    const exists = await this.collection.findOne({
+      tenantId: tenant._id,
+      locale: locale.trim(),
+    });
+    if (exists) {
+      throw new ValidationError("locale already exists for this tenant");
     }
     if (!("displayName" in data)) {
       throw new ValidationError('"displayName" field is required');

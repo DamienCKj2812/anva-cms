@@ -380,35 +380,46 @@ class AttributeService extends BaseService {
   }
 
   async delete(attribute: Attribute, contentCollection: ContentCollection): Promise<{ status: "success" | "failed"; data: any }> {
-    if (attribute.attributeKind == AttributeKindEnum.COMPONENT_PRIMITIVE) {
+    if (attribute.attributeKind === AttributeKindEnum.COMPONENT_PRIMITIVE) {
       throw new BadRequestError(
         "Cannot delete an attribute that is defined inside a reusable component blueprint. Delete the attribute from the component blueprint instead.",
       );
     }
-    const unsetObject: any = {};
-    const contentCollectionId = contentCollection._id!;
-    if (attribute.attributeKind === AttributeKindEnum.COMPONENT) {
-      const allSchemaPaths = await this.buildPathsRecursively(attribute, attribute.path);
 
-      for (const update of allSchemaPaths) {
-        const dbPath = `data.${update.path}`;
-        unsetObject[dbPath] = "";
+    const contentCollectionId = contentCollection._id!;
+    const unsetObject: any = {};
+
+    if (attribute.attributeKind === AttributeKindEnum.COMPONENT) {
+      const allPaths = await this.buildPathsRecursively(attribute, attribute.path);
+      for (const update of allPaths) {
+        unsetObject[`data.${update.path}`] = "";
       }
     } else {
-      const dbPath = `data.${attribute.path}`;
-      unsetObject[dbPath] = "";
+      unsetObject[`data.${attribute.path}`] = "";
     }
-    const query = { contentCollectionId: contentCollectionId };
-    const unsetOperation = { $unset: unsetObject };
 
-    console.log({ unsetOperation });
-
-    await Promise.all([
-      this.contentService.getCollection().updateMany(query, unsetOperation),
-      this.contentTranslationService.getCollection().updateMany(query, unsetOperation),
-    ]);
+    const otherAttributeExists = await this.collection.findOne({
+      contentCollectionId,
+      _id: { $ne: attribute._id },
+    });
 
     await this.collection.deleteOne({ _id: attribute._id });
+
+    if (!otherAttributeExists) {
+      await Promise.all([
+        this.contentService.getCollection().deleteMany({ contentCollectionId }),
+        this.contentTranslationService.getCollection().deleteMany({ contentCollectionId }),
+      ]);
+    } else {
+      const query = { contentCollectionId };
+      const unsetOperation = { $unset: unsetObject };
+
+      await Promise.all([
+        this.contentService.getCollection().updateMany(query, unsetOperation),
+        this.contentTranslationService.getCollection().updateMany(query, unsetOperation),
+      ]);
+    }
+
     await this.contentCollectionService.updateAttributeCount(contentCollectionId);
     await this.contentCollectionService.buildSchema(contentCollection);
 

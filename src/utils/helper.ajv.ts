@@ -1,7 +1,8 @@
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import { ValidationError } from "./helper.errors";
-import { Attribute } from "../module/attribute/database/models";
+import { Attribute, AttributeTypeEnum } from "../module/attribute/database/models";
+import { deepClone } from "./helper";
 
 export enum AjvSchemaKeywordEnum {
   TYPE = "type",
@@ -73,106 +74,75 @@ export function recursiveReplace(target: any, source: any): any {
   return source;
 }
 
-export function recursiveKeyCleaner(data: any, keyToDelete: string): any {
-  // 1. Base Case: If the data is a primitive, return it as is.
-  if (typeof data !== "object" || data === null) {
-    return data;
-  }
-
-  // 2. Handle Arrays
-  if (Array.isArray(data)) {
-    // Traverse each item and apply the cleaning function recursively.
-    return data.map((item) => recursiveKeyCleaner(item, keyToDelete));
-  }
-
-  // 3. Handle Objects
-  const cleanedObject = {};
-  for (const key in data) {
-    if (data.hasOwnProperty(key)) {
-      const value = data[key];
-
-      // --- DELETION RULES ---
-
-      // Rule 1: Remove if the KEY name matches the specified criteria
-      if (key === keyToDelete) {
-        // Skip this key/value pair.
-        continue;
-      }
-
-      // Rule 2: Remove if the VALUE is an empty string
-      if (value === "") {
-        // Skip this key/value pair.
-        continue;
-      }
-
-      // --- RECURSION ---
-
-      // If the value is a nested object or array, recursively clean it.
-      if (typeof value === "object" && value !== null) {
-        cleanedObject[key] = recursiveKeyCleaner(value, keyToDelete);
-      } else {
-        // Otherwise, copy the key-value pair as is.
-        cleanedObject[key] = value;
-      }
-    }
-  }
-
-  return cleanedObject;
-}
-
-export function filterSchemaByLocalizable(schema: any, localizable: boolean): any {
-  if (!schema) return null;
+export function splitSchemaByLocalizable(schema: any): {
+  sharedSchema: any | null;
+  localizableSchema: any | null;
+} {
+  if (!schema) return { sharedSchema: null, localizableSchema: null };
 
   // PRIMITIVE
   if (!schema.type || (schema.type !== "object" && schema.type !== "array")) {
-    const includePrimitive = (localizable && schema.localizable) || (!localizable && !schema.localizable);
-    return includePrimitive ? schema : null;
+    const isLocalizable = !!schema.localizable;
+
+    return {
+      sharedSchema: isLocalizable ? null : schema,
+      localizableSchema: isLocalizable ? schema : null,
+    };
   }
 
   // OBJECT
   if (schema.type === "object") {
-    const filteredProps: any = {};
-    const newRequired: string[] = [];
+    const sharedProps: any = {};
+    const sharedRequired: string[] = [];
+    const localProps: any = {};
+    const localRequired: string[] = [];
 
     for (const [key, prop] of Object.entries(schema.properties || {})) {
-      const filteredProp = filterSchemaByLocalizable(prop, localizable);
+      const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(prop);
 
-      if (filteredProp) {
-        filteredProps[key] = filteredProp;
-        if (schema.required?.includes(key)) {
-          newRequired.push(key);
-        }
+      if (sharedSchema) {
+        sharedProps[key] = sharedSchema;
+        if (schema.required?.includes(key)) sharedRequired.push(key);
+      }
+
+      if (localizableSchema) {
+        localProps[key] = localizableSchema;
+        if (schema.required?.includes(key)) localRequired.push(key);
       }
     }
 
-    if (Object.keys(filteredProps).length === 0) {
-      // No localizable fields inside → remove the object entirely
-      return null;
-    }
-
     return {
-      ...schema,
-      properties: filteredProps,
-      ...(newRequired.length > 0 ? { required: newRequired } : {}),
+      sharedSchema:
+        Object.keys(sharedProps).length > 0
+          ? {
+              ...schema,
+              properties: sharedProps,
+              ...(sharedRequired.length ? { required: sharedRequired } : {}),
+            }
+          : null,
+
+      localizableSchema:
+        Object.keys(localProps).length > 0
+          ? {
+              ...schema,
+              properties: localProps,
+              ...(localRequired.length ? { required: localRequired } : {}),
+            }
+          : null,
     };
   }
 
   // ARRAY
   if (schema.type === "array") {
-    const filteredItems = filterSchemaByLocalizable(schema.items, localizable);
-
-    if (!filteredItems) {
-      // No localizable fields inside → remove the array entirely
-      return null;
-    }
+    const { sharedSchema: sharedItems, localizableSchema: localItems } = splitSchemaByLocalizable(schema.items);
 
     return {
-      ...schema,
-      items: filteredItems,
+      sharedSchema: sharedItems ? { ...schema, items: sharedItems } : null,
+      localizableSchema: localItems ? { ...schema, items: localItems } : null,
     };
   }
 
-  return null;
+  return { sharedSchema: null, localizableSchema: null };
 }
 
 // Need to sort the shared and translation correctly by contentId
@@ -309,4 +279,94 @@ export function separateTranslatableFields(data: any, schema: any): { shared: an
     shared: schema.localizable ? null : data,
     translation: schema.localizable ? data : null,
   };
+}
+
+export function rebuild(data: any, schema: any): any {
+  if (!schema) {
+    return null;
+  }
+
+  if (schema.type === "object") {
+    if (Array.isArray(data)) {
+      return rebuild(data[0] ?? {}, schema);
+    }
+    return rebuildObject(data ?? {}, schema);
+  }
+
+  if (schema.type === "array") {
+    return rebuildArray(data, schema);
+  }
+
+  return castPrimitive(data, schema.type, schema.defaultValue);
+}
+
+function rebuildObject(data: any, schema: any) {
+  const output: any = {};
+
+  for (const key of Object.keys(schema.properties || {})) {
+    const fieldSchema = schema.properties[key];
+    const existing = data?.[key];
+
+    if (existing === undefined) {
+      output[key] = createDefault(fieldSchema);
+    } else {
+      output[key] = rebuild(existing, fieldSchema);
+    }
+  }
+
+  // If no properties and the original data was not an object, still return {}
+  return output;
+}
+
+function rebuildArray(data: any, schema: any) {
+  // If data is undefined/null -> default []
+  if (data === undefined || data === null) return [];
+
+  // If data is not an array -> wrap
+  if (!Array.isArray(data)) {
+    return [rebuild(data, schema.items)];
+  }
+
+  return data.map((it: any) => rebuild(it, schema.items));
+}
+
+export function castPrimitive(value: any, type: AttributeTypeEnum, defaultValue?: any) {
+  if (value === undefined || value === null) {
+    if (defaultValue !== undefined) return deepClone(defaultValue);
+    switch (type) {
+      case "string":
+        return "";
+      case "number":
+        return 0;
+      case "boolean":
+        return false;
+    }
+  }
+
+  try {
+    switch (type) {
+      case "string":
+        return String(value);
+      case "number": {
+        const n = Number(value);
+        return Number.isNaN(n) ? 0 : n;
+      }
+      case "boolean":
+        return Boolean(value);
+    }
+  } catch (e) {
+    if (defaultValue !== undefined) return deepClone(defaultValue);
+    // fallback
+    return null;
+  }
+}
+
+function createDefault(schema: any) {
+  if (schema.defaultValue !== undefined) return deepClone(schema.defaultValue);
+
+  if (schema.type === "object") return rebuildObject({}, schema);
+  if (schema.type === "array") return [];
+
+  // primitive
+  return castPrimitive(undefined, schema.type);
 }

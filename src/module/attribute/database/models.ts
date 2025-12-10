@@ -32,7 +32,6 @@ export interface ValidationRules {
 export interface Attribute {
   _id: ObjectId;
   contentCollectionId?: ObjectId;
-  path: string; // Store the path in annotation format
   // Not modifieable
   key: string;
   label: string;
@@ -88,7 +87,9 @@ export interface UpdateAttributeBaseDto {
 }
 
 export interface UpdatePrimitiveAttributeDTO extends UpdateAttributeBaseDto {
+  attributeType?: AttributeTypeEnum;
   localizable?: boolean;
+  attributeFormat?: AttributeFormatEnum;
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;

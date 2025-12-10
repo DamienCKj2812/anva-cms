@@ -4,6 +4,11 @@ import { AppContext } from "../utils/helper.context";
 import fs from "fs/promises";
 import { format } from "date-fns";
 
+// Deep clone helper
+export function deepClone<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v));
+}
+
 // Validate the media folder to prevent unnecessary file uploads
 export function validateFolderExists(context: AppContext) {
   return async (req: Request, res: Response, next: NextFunction) => {

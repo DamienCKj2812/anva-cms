@@ -7,10 +7,11 @@ import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { ContentTranslation, CreateContentTranslationData, FullContentTranslation, UpdateContentTranslationData } from "./models";
 import ajv, {
-  filterSchemaByLocalizable,
   preValidateComponentPlaceholders,
+  rebuild,
   recursiveReplace,
   separateTranslatableFields,
+  splitSchemaByLocalizable,
 } from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
@@ -62,20 +63,20 @@ class ContentTranslationService extends BaseService {
 
     if (!fullSchema) throw new ValidationError("Content collection schema is missing");
 
-    const filteredSchema = filterSchemaByLocalizable(fullSchema, true);
+    const { localizableSchema } = splitSchemaByLocalizable(fullSchema);
     console.log("creating translation");
     console.dir({ data }, { depth: null });
-    console.dir({ filteredSchema }, { depth: null });
+    console.dir({ localizableSchema }, { depth: null });
 
     try {
-      preValidateComponentPlaceholders(filteredSchema);
+      preValidateComponentPlaceholders(localizableSchema);
     } catch (err) {
       throw new ValidationError(err instanceof Error ? err.message : String(err));
     }
 
     let validate: ValidateFunction;
     try {
-      validate = ajv.compile(filteredSchema);
+      validate = ajv.compile(localizableSchema);
     } catch (err) {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
     }
@@ -197,7 +198,7 @@ class ContentTranslationService extends BaseService {
       if (!fullSchema) throw new Error("Content collection schema is missing");
 
       // Filter schema to only localizable fields
-      const filteredSchema = filterSchemaByLocalizable(fullSchema, true);
+      const { localizableSchema } = splitSchemaByLocalizable(fullSchema);
 
       // Only update the fields provided
       const existingData = contentTranslation.data || {};
@@ -205,14 +206,14 @@ class ContentTranslationService extends BaseService {
 
       // Validate against filtered schema
       try {
-        preValidateComponentPlaceholders(filteredSchema);
+        preValidateComponentPlaceholders(localizableSchema);
       } catch (err) {
         throw new ValidationError(err instanceof Error ? err.message : String(err));
       }
 
       let validate: ValidateFunction;
       try {
-        validate = ajv.compile(filteredSchema);
+        validate = ajv.compile(localizableSchema);
       } catch (err) {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
@@ -275,6 +276,22 @@ class ContentTranslationService extends BaseService {
   async delete(contentTranslation: ContentTranslation): Promise<ContentTranslation> {
     await this.collection.deleteOne({ _id: contentTranslation._id });
     return contentTranslation;
+  }
+
+  async rebuildContentData(contentCollection: ContentCollection, schema: any) {
+    const cursor = this.collection.find({
+      contentCollectionId: contentCollection._id,
+    });
+
+    while (await cursor.hasNext()) {
+      const doc = await cursor.next();
+      if (!doc) continue;
+
+      // Rebuild the data field based on the new schema
+      const rebuiltData = rebuild(doc.data ?? {}, schema);
+
+      await this.collection.updateOne({ _id: doc._id }, { $set: { data: rebuiltData }, $currentDate: { updatedAt: true } });
+    }
   }
 }
 

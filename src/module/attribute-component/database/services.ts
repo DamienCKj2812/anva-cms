@@ -179,13 +179,10 @@ class AttributeComponentService extends BaseService {
     const validatedData = await this.addAttributeValidation(data, attributeComponent);
     const createdBy = getCurrentUserId(this.context);
 
-    const initialPath = validatedData.key;
-
     console.log("adding primitive attribute into the component: ", validatedData);
     const newAttribute: Attribute = {
       _id: new ObjectId(),
       key: validatedData.key,
-      path: initialPath,
       label: validatedData.label,
       attributeKind: AttributeKindEnum.COMPONENT_PRIMITIVE,
       componentRefId: attributeComponent._id,
@@ -211,26 +208,6 @@ class AttributeComponentService extends BaseService {
     if (!updatedComponent) {
       throw new Error("Failed to add attribute to component");
     }
-
-    const componentPlaceholders = await this.attributeService.findMany({
-      componentRefId: attributeComponent._id,
-      attributeKind: AttributeKindEnum.COMPONENT,
-    });
-
-    const updatePromises: Promise<any>[] = [];
-
-    for (const placeholder of componentPlaceholders) {
-      const newBasePath = placeholder.path;
-
-      const allNestedPathUpdates = await this.attributeService.buildPathsRecursively(placeholder, newBasePath);
-
-      const batchUpdates = allNestedPathUpdates.map((update) => {
-        return this.attributeService.getCollection().findOneAndUpdate({ _id: update.id }, { $set: { path: update.path } });
-      });
-      updatePromises.push(...batchUpdates);
-    }
-
-    await Promise.all(updatePromises);
 
     await this.buildSchemaForComponent(updatedComponent);
 

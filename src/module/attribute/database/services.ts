@@ -20,9 +20,9 @@ import { ContentCollection } from "../../content-collection/database/models";
 import { BaseService } from "../../core/base-service";
 import AttributeComponentService from "../../attribute-component/database/services";
 import { AttributeComponent } from "../../attribute-component/database/models";
-import { Content } from "../../content/database/models";
 import ContentService from "../../content/database/services";
 import ContentTranslationService from "../../content-translation/database/services";
+import { splitSchemaByLocalizable } from "../../../utils/helper.ajv";
 
 class AttributeService extends BaseService {
   private db: Db;
@@ -31,7 +31,9 @@ class AttributeService extends BaseService {
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdatePrimitiveAttributeDTO> = new Set([
     "label",
     "required",
+    "attributeType",
     "localizable",
+    "attributeFormat",
     "defaultValue",
     "enumValues",
     "validation",
@@ -154,7 +156,6 @@ class AttributeService extends BaseService {
     const newAttribute: Attribute = {
       _id: new ObjectId(),
       contentCollectionId: contentCollection._id,
-      path: validatedData.key,
       key: validatedData.key,
       label: validatedData.label,
       attributeKind: AttributeKindEnum.PRIMITIVE,
@@ -174,8 +175,16 @@ class AttributeService extends BaseService {
     if (!result) {
       throw new NotFoundError("Failed to create the attribute");
     }
-    await this.contentCollectionService.buildSchema(contentCollection);
-    await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
+    const newContentCollection = await this.contentCollectionService.buildSchema(contentCollection);
+    await this.contentCollectionService.updateAttributeCount(contentCollection._id);
+    const newSchema = await this.getValidationSchema(newContentCollection);
+    const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(newSchema);
+
+    await Promise.all([
+      this.contentService.rebuildContentData(contentCollection, sharedSchema),
+      this.contentTranslationService.rebuildContentData(contentCollection, localizableSchema),
+    ]);
+
     return newAttribute;
   }
 
@@ -224,16 +233,13 @@ class AttributeService extends BaseService {
 
   async createComponentAttribute(data: any, contentCollection: any): Promise<Attribute> {
     const { validatedData, attributeComponent } = await this.createComponentAttributeValidation(data, contentCollection);
-    const createdBy = new ObjectId(); // Placeholder for getCurrentUserId(this.context);
+    const createdBy = getCurrentUserId(this.context);
 
-    // 1. Calculate the new placeholder's path (Root-level path is just its key)
-    const attributePath = validatedData.key;
     const attributeCount = await this.collection.countDocuments({ contentCollectionId: contentCollection._id });
 
     const newAttribute: Attribute = {
       _id: new ObjectId(),
       contentCollectionId: contentCollection._id,
-      path: attributePath, // Set the path for the placeholder
 
       key: validatedData.key,
       label: validatedData.label,
@@ -253,19 +259,6 @@ class AttributeService extends BaseService {
       throw new Error("Failed to create the component attribute");
     }
 
-    //  RECURSIVELY CALCULATE ALL NESTED PATHS
-    const allNestedPathUpdates = await this.buildPathsRecursively(
-      newAttribute, // Start with the newly inserted attribute
-      newAttribute.path, // The base path for recursion
-    );
-
-    //  Apply all path changes to the nested attributes
-    const updatePromises = allNestedPathUpdates.map((update) => {
-      // Use $set to update the 'path' field for every affected attribute
-      return this.collection.findOneAndUpdate({ _id: update.id }, { $set: { path: update.path } });
-    });
-
-    await Promise.all(updatePromises);
     await this.contentCollectionService.buildSchema(contentCollection);
     await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
 
@@ -296,62 +289,53 @@ class AttributeService extends BaseService {
   }
 
   private async updatePrimitiveAttributeValidation(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<UpdatePrimitiveAttributeDTO> {
-    const { label, required, localizable, defaultValue, enumValues, validation } = data;
+    const { label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
     if (attribute.attributeKind != AttributeKindEnum.PRIMITIVE) {
       throw new BadRequestError("only can modify the primitive attribute");
     }
     if (
       !("label" in data) &&
       !("required" in data) &&
+      !("attributeType" in data) &&
       !("localizable" in data) &&
+      !("attributeFormat" in data) &&
       !("defaultValue" in data) &&
       !("enumValues" in data) &&
       !("validation" in data)
     ) {
       throw new NotFoundError("No valid fields provided for update");
     }
-    if (label && (typeof label !== "string" || !label.trim())) {
+    if (label !== undefined && (typeof label !== "string" || !label.trim())) {
       throw new ValidationError("label must be a non-empty string");
     }
-    if (required && typeof required !== "boolean") {
+    if (required !== undefined && typeof required !== "boolean") {
       throw new ValidationError("required must be a boolean");
     }
+    if (attributeType !== undefined && !Object.values(AttributeTypeEnum).includes(attributeType)) {
+      throw new ValidationError(`Attribute attributeType must be one of: ${Object.values(AttributeTypeEnum).join(", ")}`);
+    }
+
     if (localizable && typeof localizable !== "boolean") {
       throw new ValidationError("localizable must be a boolean");
     }
-    if (defaultValue !== undefined) {
-      switch (attribute.attributeType) {
-        case AttributeTypeEnum.STRING:
-          if (typeof defaultValue !== "string" || !defaultValue.trim()) {
-            throw new ValidationError("defaultValue must be a non-empty string");
-          }
-          break;
-        case AttributeTypeEnum.NUMBER:
-          if (typeof defaultValue !== "number") {
-            throw new ValidationError("defaultValue must be a number");
-          }
-          break;
-        case AttributeTypeEnum.BOOLEAN:
-          if (typeof defaultValue !== "boolean") {
-            throw new ValidationError("defaultValue must be a boolean");
-          }
-          break;
-      }
+
+    if (attributeFormat !== undefined && !Object.values(AttributeFormatEnum).includes(attributeFormat)) {
+      throw new ValidationError(`Format type must be one of: ${Object.values(AttributeFormatEnum).join(", ")}`);
     }
+
+    if (defaultValue !== undefined) {
+      this.validateDefaultValue((attributeType as AttributeTypeEnum) || attribute.attributeType, defaultValue);
+    }
+
     if (enumValues !== undefined) {
-      if (!Array.isArray(enumValues) || enumValues.length === 0) {
-        throw new ValidationError("enumValues must be a non-empty array of strings");
-      }
-      if (enumValues.some((v) => typeof v !== "string" || !v.trim())) {
-        throw new ValidationError("enumValues must contain only non-empty strings");
-      }
+      this.validateEnumValue(enumValues);
     }
 
     if (validation !== undefined) {
       if (!attribute.attributeType) {
         throw new ValidationError("attribute is missing attributeType");
       }
-      this.validateAttributeValidation(attribute.attributeType, validation, attribute.attributeFormat);
+      this.validateAttributeValidation(attributeType || attribute.attributeType, validation, attribute.attributeFormat);
       console.log("silently correct");
     }
     return data;
@@ -375,7 +359,14 @@ class AttributeService extends BaseService {
     if (!updatedAttribute) {
       throw new NotFoundError("failed to update contentCollection");
     }
-    await this.contentCollectionService.buildSchema(contentCollection);
+    const newContentCollection = await this.contentCollectionService.buildSchema(contentCollection);
+    const newSchema = await this.getValidationSchema(newContentCollection);
+    const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(newSchema);
+
+    await Promise.all([
+      this.contentService.rebuildContentData(contentCollection, sharedSchema),
+      this.contentTranslationService.rebuildContentData(contentCollection, localizableSchema),
+    ]);
     return updatedAttribute;
   }
 
@@ -386,42 +377,37 @@ class AttributeService extends BaseService {
       );
     }
 
-    const contentCollectionId = contentCollection._id!;
-    const unsetObject: any = {};
+    const collectionId = contentCollection._id!;
 
-    if (attribute.attributeKind === AttributeKindEnum.COMPONENT) {
-      const allPaths = await this.buildPathsRecursively(attribute, attribute.path);
-      for (const update of allPaths) {
-        unsetObject[`data.${update.path}`] = "";
-      }
-    } else {
-      unsetObject[`data.${attribute.path}`] = "";
-    }
-
-    const otherAttributeExists = await this.collection.findOne({
-      contentCollectionId,
+    const remainingAttribute = await this.collection.findOne({
+      contentCollectionId: collectionId,
       _id: { $ne: attribute._id },
     });
 
-    await this.collection.deleteOne({ _id: attribute._id });
-
-    if (!otherAttributeExists) {
-      await Promise.all([
-        this.contentService.getCollection().deleteMany({ contentCollectionId }),
-        this.contentTranslationService.getCollection().deleteMany({ contentCollectionId }),
-      ]);
-    } else {
-      const query = { contentCollectionId };
-      const unsetOperation = { $unset: unsetObject };
+    if (!remainingAttribute) {
+      await this.collection.deleteOne({ _id: attribute._id });
 
       await Promise.all([
-        this.contentService.getCollection().updateMany(query, unsetOperation),
-        this.contentTranslationService.getCollection().updateMany(query, unsetOperation),
+        this.contentService.getCollection().deleteMany({ contentCollectionId: collectionId }),
+        this.contentTranslationService.getCollection().deleteMany({ contentCollectionId: collectionId }),
       ]);
+
+      await this.contentCollectionService.buildSchema(contentCollection);
+
+      return {
+        status: "success",
+        data: attribute,
+      };
     }
 
-    await this.contentCollectionService.updateAttributeCount(contentCollectionId);
-    await this.contentCollectionService.buildSchema(contentCollection);
+    await this.collection.deleteOne({ _id: attribute._id });
+    const updatedCollection = await this.contentCollectionService.buildSchema(contentCollection);
+    const fullSchema = await this.getValidationSchema(updatedCollection);
+    const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(fullSchema);
+    await Promise.all([
+      this.contentService.rebuildContentData(updatedCollection, sharedSchema),
+      this.contentTranslationService.rebuildContentData(updatedCollection, localizableSchema),
+    ]);
 
     return { status: "success", data: attribute };
   }
@@ -499,8 +485,8 @@ class AttributeService extends BaseService {
   public validateDefaultValue(attributeType: string, defaultValue: string) {
     switch (attributeType) {
       case AttributeTypeEnum.STRING:
-        if (typeof defaultValue !== "string" || !defaultValue.trim()) {
-          throw new ValidationError("defaultValue must be a non-empty string");
+        if (typeof defaultValue !== "string") {
+          throw new ValidationError("defaultValue must be a string");
         }
         break;
       case AttributeTypeEnum.NUMBER:
@@ -570,45 +556,6 @@ class AttributeService extends BaseService {
     }
 
     return schema;
-  }
-
-  async buildPathsRecursively(targetAttribute: Attribute, newBasePath: string): Promise<{ id: ObjectId; path: string }[]> {
-    const updates: { id: ObjectId; path: string }[] = [];
-
-    updates.push({
-      id: targetAttribute._id,
-      path: newBasePath,
-    });
-
-    if (targetAttribute.attributeKind === AttributeKindEnum.COMPONENT) {
-      const componentRefId = targetAttribute.componentRefId;
-
-      if (componentRefId) {
-        const nestedComponent = await this.attributeComponentService.findOne({ _id: componentRefId });
-
-        if (nestedComponent && nestedComponent.attributes?.length) {
-          let pathPrefix = newBasePath;
-
-          if (nestedComponent.repeatable) {
-            pathPrefix = `${newBasePath}[]`;
-          }
-
-          const nestedAttributes = await this.findMany({
-            _id: { $in: nestedComponent.attributes },
-          });
-
-          for (const childAttribute of nestedAttributes) {
-            const childPath = `${pathPrefix}.${childAttribute.key}`;
-
-            const childUpdates = await this.buildPathsRecursively(childAttribute, childPath);
-
-            updates.push(...childUpdates);
-          }
-        }
-      }
-    }
-
-    return updates;
   }
 }
 

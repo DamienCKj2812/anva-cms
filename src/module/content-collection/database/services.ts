@@ -11,6 +11,7 @@ import { BaseService } from "../../core/base-service";
 import AttributeService from "../../attribute/database/services";
 import ContentService from "../../content/database/services";
 import AttributeComponentService from "../../attribute-component/database/services";
+import { castPrimitive } from "../../../utils/helper.ajv";
 
 class ContentCollectionService extends BaseService {
   private db: Db;
@@ -256,7 +257,9 @@ class ContentCollectionService extends BaseService {
       if (attribute.attributeKind === AttributeKindEnum.PRIMITIVE) {
         if (attribute.attributeFormat) prop.format = attribute.attributeFormat;
         if (attribute.enumValues) prop.enum = attribute.enumValues;
-        if (attribute.defaultValue !== undefined) prop.default = attribute.defaultValue;
+        if (attribute.defaultValue !== undefined && attribute.attributeType !== undefined) {
+          prop.default = castPrimitive(attribute.defaultValue, attribute.attributeType);
+        }
 
         if (attribute.validation) {
           Object.assign(prop, attribute.validation);

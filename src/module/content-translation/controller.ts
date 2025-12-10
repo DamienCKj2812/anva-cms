@@ -113,7 +113,11 @@ const contentTranslationController = (context: AppContext) => {
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const deletedContentTranslation = await contentTranslationService.delete(req.params.id);
+      const { id } = req.params;
+      if (!id) throw new BadRequestError('"id" field is required');
+      const [contentTranslation] = await Promise.all([contentTranslationService.findOne({ _id: new ObjectId(id) })]);
+      if (!contentTranslation) throw new NotFoundError("contentTranslation not found");
+      const deletedContentTranslation = await contentTranslationService.delete(contentTranslation);
       res.status(200).json(successResponse(deletedContentTranslation));
     } catch (err) {
       next(err);

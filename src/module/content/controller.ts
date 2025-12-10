@@ -61,7 +61,11 @@ const contentController = (context: AppContext) => {
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const deletedContent = await contentService.delete(req.params.id);
+      const { id } = req.params;
+      if (!id) throw new BadRequestError('"id" field is required');
+      const [content] = await Promise.all([contentService.findOne({ _id: new ObjectId(id) })]);
+      if (!content) throw new NotFoundError("content not found");
+      const deletedContent = await contentService.delete(content);
       res.status(200).json(successResponse(deletedContent));
     } catch (err) {
       next(err);

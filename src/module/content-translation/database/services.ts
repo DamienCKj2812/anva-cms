@@ -272,18 +272,9 @@ class ContentTranslationService extends BaseService {
     return await this.collection.updateMany(filter, update, options);
   }
 
-  private async deleteValidation(id: string): Promise<ContentTranslation> {
-    const content = await this.collection.findOne({ _id: new ObjectId(id) }, { projection: { name: 1 } });
-    if (!content) {
-      throw new NotFoundError("content not found");
-    }
-    return content;
-  }
-
-  async delete(id: string): Promise<ContentTranslation> {
-    const content = await this.deleteValidation(id);
-    await this.collection.deleteOne({ _id: content._id });
-    return content;
+  async delete(contentTranslation: ContentTranslation): Promise<ContentTranslation> {
+    await this.collection.deleteOne({ _id: contentTranslation._id });
+    return contentTranslation;
   }
 }
 

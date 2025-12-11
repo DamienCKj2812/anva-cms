@@ -30,6 +30,34 @@ const attributeComponentController = (context: AppContext) => {
     }
   });
 
+  router.post("/:attributeComponentId/update", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { attributeComponentId } = req.params;
+      const attributeComponent = await attributeComponentService.findOne({ _id: new ObjectId(attributeComponentId) });
+      if (!attributeComponent) {
+        throw new ValidationError("attributeComponent not found");
+      }
+      const attribute = await attributeComponentService.update(req.body, attributeComponent);
+      res.status(201).json(successResponse(attribute));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/:attributeComponentId/delete", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { attributeComponentId } = req.params;
+      const attributeComponent = await attributeComponentService.findOne({ _id: new ObjectId(attributeComponentId) });
+      if (!attributeComponent) {
+        throw new ValidationError("attributeComponent not found");
+      }
+      const attribute = await attributeComponentService.delete(attributeComponent);
+      res.status(201).json(successResponse(attribute));
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post("/:id/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const attributeComponent = await attributeComponentService.getById(req.params.id);

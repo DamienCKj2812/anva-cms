@@ -18,3 +18,8 @@ export interface CreateAttributeComponentDto {
   label: string;
   category: string;
 }
+
+export interface UpdateAttributeComponentDto {
+  label?: string;
+  category?: string;
+}

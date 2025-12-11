@@ -6,7 +6,7 @@ import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import { AttributeComponent, CreateAttributeComponentDto } from "./models";
+import { AttributeComponent, CreateAttributeComponentDto, UpdateAttributeComponentDto } from "./models";
 import AttributeService from "../../attribute/database/services";
 import { Tenant } from "../../tenant/database/models";
 import {
@@ -25,6 +25,7 @@ class AttributeComponentService extends BaseService {
   private db: Db;
   private collection: Collection<AttributeComponent>;
   public readonly collectionName = "attribute-components";
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateAttributeComponentDto> = new Set(["label", "category"] as const);
   private static readonly ALLOWED_UPDATE_ATTRIBUTE_FIELDS: ReadonlySet<keyof UpdatePrimitiveAttributeDTO> = new Set([
     "label",
     "required",
@@ -118,6 +119,94 @@ class AttributeComponentService extends BaseService {
       throw new NotFoundError("Failed to create the attribute component");
     }
     return newAttributeComponent;
+  }
+
+  private async updateValidation(data: UpdateAttributeComponentDto, attributeComponent: AttributeComponent): Promise<UpdateAttributeComponentDto> {
+    if (!("label" in data) && !("category" in data)) {
+      throw new NotFoundError("No valid fields provided for update");
+    }
+    const { label, category } = data;
+    if (label !== undefined && (typeof label !== "string" || !label.trim())) {
+      throw new ValidationError("label must be a non-empty string");
+    }
+    if (category !== undefined) {
+      if (typeof data.category === "string") {
+        data.category = data.category.trim();
+      }
+      if (!/^[A-Za-z0-9]+$/.test(category)) {
+        throw new ValidationError("category may only contain letters and numbers (no spaces or symbols)");
+      }
+      if (typeof category !== "string" || !category.trim()) {
+        throw new ValidationError("category must be a non-empty string");
+      }
+
+      const existedKey = await this.collection.findOne({ tenantId: attributeComponent.tenantId, category, key: attributeComponent.key });
+
+      if (existedKey) {
+        throw new ValidationError("key already exist");
+      }
+    }
+
+    return data;
+  }
+
+  async update(data: UpdateAttributeComponentDto, attributeComponent: AttributeComponent): Promise<AttributeComponent> {
+    const filteredUpdateData = filterFields(data, AttributeComponentService.ALLOWED_UPDATE_FIELDS);
+
+    const validatedData = await this.updateValidation(filteredUpdateData, attributeComponent);
+    console.log("updating attribute component: ", validatedData);
+    const updatingFields: Partial<UpdateAttributeComponentDto> = {
+      ...validatedData,
+    };
+    const updatedDocumentResult = await this.collection.findOneAndUpdate(
+      { _id: attributeComponent._id },
+      { $set: updatingFields, $currentDate: { updatedAt: true } },
+      { returnDocument: "after" }, // Now valid
+    );
+    if (!updatedDocumentResult) {
+      throw new NotFoundError("Failed to update the attribute component");
+    }
+    return updatedDocumentResult;
+  }
+
+  async delete(attributeComponent: AttributeComponent): Promise<{ status: "success" | "failed"; data: any }> {
+    // Find all Content Collections that reference this component BEFORE deletion.
+    const uniqueContentCollectionIds = await this.attributeService.getCollection().distinct("contentCollectionId", {
+      componentRefId: attributeComponent._id,
+      attributeKind: AttributeKindEnum.COMPONENT,
+    });
+    const validContentIds = uniqueContentCollectionIds.filter((id) => id) as ObjectId[];
+
+    const deleteResult = await this.collection.deleteOne({ _id: attributeComponent._id });
+    if (deleteResult.deletedCount === 0) {
+      throw new Error(`Delete failed: Attribute component with ID ${attributeComponent._id} not found.`);
+    }
+    await this.attributeService.getCollection().deleteMany({ componentRefId: attributeComponent._id });
+
+    if (validContentIds.length > 0) {
+      const contentDocs = await this.contentCollectionService
+        .getCollection()
+        .find({ _id: { $in: validContentIds } })
+        .toArray();
+      const rebuildPromises = contentDocs.map(async (contentDoc) => {
+        if (!contentDoc) return;
+
+        const updatedContentDoc = await this.contentCollectionService.buildSchema(contentDoc);
+
+        const fullSchema = await this.attributeService.getValidationSchema(updatedContentDoc || contentDoc);
+
+        // c. REBUILD CONTENT DATA: Clean up content data based on the new schema (removing old component data)
+        await this.contentCollectionService.rebuildContentData(updatedContentDoc || contentDoc, fullSchema);
+      });
+
+      await Promise.all(rebuildPromises);
+    }
+
+    // 5. Return success
+    return {
+      status: "success",
+      data: attributeComponent,
+    };
   }
 
   private async addAttributeValidation(
@@ -457,8 +546,6 @@ class AttributeComponentService extends BaseService {
 
     const rebuildPromises = contentDocs.map(async (contentDoc) => {
       if (!contentDoc) return;
-      // Execute heavy service calls for this document
-      console.log({ contentDoc });
       const fullSchema = await this.attributeService.getValidationSchema(contentDoc);
       await this.contentCollectionService.rebuildContentData(contentDoc, fullSchema);
     });

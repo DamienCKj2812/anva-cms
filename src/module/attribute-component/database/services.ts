@@ -1,22 +1,49 @@
 import { ObjectId, Db, Collection, FindOptions, Filter } from "mongodb";
 import { getCurrentUserId } from "../../../utils/helper.auth";
 import { validateObjectId } from "../../../utils/helper.mongo";
-import { NotFoundError, ValidationError } from "../../../utils/helper.errors";
-import { WithMetaData } from "../../../utils/helper";
+import { BadRequestError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
+import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { AttributeComponent, CreateAttributeComponentDto } from "./models";
 import AttributeService from "../../attribute/database/services";
 import { Tenant } from "../../tenant/database/models";
-import { Attribute, AttributeFormatEnum, AttributeKindEnum, AttributeTypeEnum, CreatePrimitiveAttributeDTO } from "../../attribute/database/models";
+import {
+  Attribute,
+  AttributeFormatEnum,
+  AttributeKindEnum,
+  AttributeTypeEnum,
+  CreatePrimitiveAttributeDTO,
+  UpdatePrimitiveAttributeDTO,
+  ValidationRules,
+} from "../../attribute/database/models";
 import { ContentCollection } from "../../content-collection/database/models";
+import ContentCollectionService from "../../content-collection/database/services";
 
 class AttributeComponentService extends BaseService {
   private db: Db;
   private collection: Collection<AttributeComponent>;
   public readonly collectionName = "attribute-components";
+  private static readonly ALLOWED_UPDATE_ATTRIBUTE_FIELDS: ReadonlySet<keyof UpdatePrimitiveAttributeDTO> = new Set([
+    "label",
+    "required",
+    "attributeType",
+    "localizable",
+    "attributeFormat",
+    "defaultValue",
+    "enumValues",
+    "validation",
+  ] as const);
+  private static readonly ALLOWED_UPDATE_VALIDATION_FIELDS: ReadonlySet<keyof ValidationRules> = new Set([
+    "minLength",
+    "maxLength",
+    "minimum",
+    "maximum",
+    "pattern",
+  ] as const);
   private attributeService: AttributeService;
+  private contentCollectionService: ContentCollectionService;
 
   constructor(context: AppContext) {
     super(context);
@@ -26,6 +53,7 @@ class AttributeComponentService extends BaseService {
 
   async init() {
     this.attributeService = this.getService("AttributeService");
+    this.contentCollectionService = this.getService("ContentCollectionService");
   }
 
   private async createValidation(data: CreateAttributeComponentDto, tenant: Tenant): Promise<CreateAttributeComponentDto> {
@@ -202,9 +230,119 @@ class AttributeComponentService extends BaseService {
       throw new Error("Failed to add attribute to component");
     }
 
-    await this.buildSchemaForComponent(updatedComponent);
-
+    const newComponentAttribute = await this.buildSchemaForComponent(updatedComponent);
+    await this.rebuildContentDataByComponent(newComponentAttribute);
     return updatedComponent;
+  }
+
+  private async updateAttributeValidation(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<UpdatePrimitiveAttributeDTO> {
+    const { label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
+    if (attribute.attributeKind != AttributeKindEnum.COMPONENT_PRIMITIVE) {
+      throw new BadRequestError("only can modify the component primitive attribute");
+    }
+    if (
+      !("label" in data) &&
+      !("required" in data) &&
+      !("attributeType" in data) &&
+      !("localizable" in data) &&
+      !("attributeFormat" in data) &&
+      !("defaultValue" in data) &&
+      !("enumValues" in data) &&
+      !("validation" in data)
+    ) {
+      throw new NotFoundError("No valid fields provided for update");
+    }
+    if (label !== undefined && (typeof label !== "string" || !label.trim())) {
+      throw new ValidationError("label must be a non-empty string");
+    }
+    if (required !== undefined && typeof required !== "boolean") {
+      throw new ValidationError("required must be a boolean");
+    }
+    if (attributeType !== undefined && !Object.values(AttributeTypeEnum).includes(attributeType)) {
+      throw new ValidationError(`Attribute attributeType must be one of: ${Object.values(AttributeTypeEnum).join(", ")}`);
+    }
+
+    if (localizable && typeof localizable !== "boolean") {
+      throw new ValidationError("localizable must be a boolean");
+    }
+
+    if (attributeFormat !== undefined && !Object.values(AttributeFormatEnum).includes(attributeFormat)) {
+      throw new ValidationError(`Format type must be one of: ${Object.values(AttributeFormatEnum).join(", ")}`);
+    }
+
+    if (defaultValue !== undefined) {
+      this.attributeService.validateDefaultValue((attributeType as AttributeTypeEnum) || attribute.attributeType, defaultValue);
+    }
+
+    if (enumValues !== undefined) {
+      this.attributeService.validateEnumValue(enumValues);
+    }
+
+    if (validation !== undefined) {
+      if (!attribute.attributeType) {
+        throw new ValidationError("attribute is missing attributeType");
+      }
+      this.attributeService.validateAttributeValidation(attributeType || attribute.attributeType, validation, attribute.attributeFormat);
+      console.log("silently correct");
+    }
+    return data;
+  }
+
+  async updateAttributeInComponent(
+    data: UpdatePrimitiveAttributeDTO,
+    attribute: Attribute,
+    attributeComponent: AttributeComponent,
+  ): Promise<AttributeComponent> {
+    if (data.validation) {
+      data.validation = filterFields(data.validation, AttributeComponentService.ALLOWED_UPDATE_VALIDATION_FIELDS);
+    }
+    const filteredUpdateData = filterFields(data, AttributeComponentService.ALLOWED_UPDATE_ATTRIBUTE_FIELDS);
+    const validatedData = await this.updateAttributeValidation(attribute, filteredUpdateData);
+
+    const updatingFields: Partial<Attribute> = {
+      ...validatedData,
+    };
+    const updatedAttribute = await this.attributeService
+      .getCollection()
+      .findOneAndUpdate({ _id: attribute._id }, { $set: updatingFields, $currentDate: { updatedAt: true } }, { returnDocument: "after" });
+    if (!updatedAttribute) {
+      throw new NotFoundError("failed to update contentCollection");
+    }
+    const latestComponentDocument = await this.findOne({ _id: attributeComponent._id });
+    if (!latestComponentDocument) {
+      throw new NotFoundError(`Parent component not found for ID: ${attributeComponent._id}`);
+    }
+    const updatedComponentWithSchema = await this.buildSchemaForComponent(latestComponentDocument);
+    await this.rebuildContentDataByComponent(updatedComponentWithSchema);
+    return updatedComponentWithSchema;
+  }
+
+  async deleteAttributeInComponent(
+    attribute: Attribute,
+    attributeComponent: AttributeComponent,
+  ): Promise<{ status: "success" | "failed"; data: any }> {
+    if (attribute.attributeKind !== AttributeKindEnum.COMPONENT_PRIMITIVE) {
+      throw new BadRequestError("Only attributes defined in the component can be deleted.");
+    }
+    const deleteResult = await this.attributeService.getCollection().deleteOne({ _id: attribute._id });
+    if (deleteResult.deletedCount !== 1) {
+      console.warn(`Attempted to delete attribute ID ${attribute._id} but deletedCount was ${deleteResult.deletedCount}`);
+    }
+    const componentUpdateResult = await this.collection.updateOne({ _id: attributeComponent._id }, { $pull: { attributes: attribute._id } });
+
+    if (componentUpdateResult.modifiedCount === 0) {
+      console.warn(
+        `$pull operation failed for attribute ID ${attribute._id} in component ${attributeComponent._id}. It may have already been removed.`,
+      );
+    }
+
+    const updatedComponent = await this.buildSchemaForComponent(attributeComponent);
+    await this.rebuildContentDataByComponent(updatedComponent);
+
+    return {
+      status: "success",
+      data: attribute,
+    };
   }
 
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<AttributeComponent>> {
@@ -230,7 +368,7 @@ class AttributeComponentService extends BaseService {
     return this.collection.find(filter, options).toArray();
   }
 
-  async buildSchemaForComponent(attributeComponent: AttributeComponent): Promise<any> {
+  async buildSchemaForComponent(attributeComponent: AttributeComponent): Promise<AttributeComponent> {
     let schema: any;
 
     schema = {
@@ -291,6 +429,41 @@ class AttributeComponentService extends BaseService {
     }
 
     return updated;
+  }
+
+  async rebuildContentDataByComponent(attributeComponent: AttributeComponent) {
+    const { _id: componentRefId } = attributeComponent;
+
+    const uniqueContentCollectionIds = await this.attributeService.getCollection().distinct("contentCollectionId", {
+      componentRefId: componentRefId,
+      attributeKind: AttributeKindEnum.COMPONENT,
+    });
+
+    const validContentIds = uniqueContentCollectionIds.filter((id) => id) as ObjectId[];
+
+    if (validContentIds.length === 0) {
+      console.log("No valid content collection IDs found for rebuilding.");
+      return;
+    }
+
+    const contentDocs = await this.contentCollectionService
+      .getCollection()
+      .find({
+        _id: { $in: validContentIds },
+      })
+      .toArray();
+
+    console.dir({ contentDocs }, { depth: null });
+
+    const rebuildPromises = contentDocs.map(async (contentDoc) => {
+      if (!contentDoc) return;
+      // Execute heavy service calls for this document
+      console.log({ contentDoc });
+      const fullSchema = await this.attributeService.getValidationSchema(contentDoc);
+      await this.contentCollectionService.rebuildContentData(contentDoc, fullSchema);
+    });
+
+    await Promise.all(rebuildPromises);
   }
 }
 

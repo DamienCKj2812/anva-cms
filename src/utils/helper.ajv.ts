@@ -264,30 +264,52 @@ export function separateTranslatableFields(data: any, schema: any): { shared: an
 export function rebuildWithTranslation(sharedData: any, translationData: any, schema: any, forTranslation = false): any {
   if (!schema) return {};
 
+  const schemaLocalizable = isLocalizable(schema);
+
+  // ----- BASE CASE: primitive -----
+  if (schema.type !== "object" && schema.type !== "array") {
+    if (!schemaLocalizable) {
+      // shared-only field
+      return castPrimitive(sharedData, schema.type, schema.defaultValue);
+    }
+
+    // translation OR fallback to shared
+    return castPrimitive(forTranslation ? (translationData ?? sharedData) : (sharedData ?? translationData), schema.type, schema.defaultValue);
+  }
+
+  // ----- OBJECT CASE -----
   if (schema.type === "object") {
     const output: any = {};
 
     for (const key of Object.keys(schema.properties || {})) {
       const fieldSchema = schema.properties[key];
+      const fieldLocalizable = isLocalizable(fieldSchema);
 
-      if (forTranslation && !fieldSchema.localizable) continue;
-      if (!forTranslation && fieldSchema.localizable) continue;
+      // skip fields that don't belong in this pass
+      if (forTranslation && !fieldLocalizable) continue;
+      if (!forTranslation && fieldLocalizable) continue;
 
-      const value = forTranslation ? (translationData?.[key] ?? sharedData?.[key]) : (sharedData?.[key] ?? translationData?.[key]);
+      const sharedValue = sharedData?.[key];
+      const transValue = translationData?.[key];
 
-      output[key] = rebuildWithTranslation(value, forTranslation ? {} : translationData?.[key], fieldSchema, forTranslation);
+      output[key] = rebuildWithTranslation(sharedValue, transValue, fieldSchema, forTranslation);
     }
 
     return output;
   }
 
+  // ----- ARRAY CASE -----
   if (schema.type === "array") {
-    const arrData = Array.isArray(sharedData) ? sharedData : [];
-    return arrData.map((item, i) => rebuildWithTranslation(item, translationData?.[i] ?? {}, schema.items, forTranslation));
+    const arrShared = Array.isArray(sharedData) ? sharedData : [];
+    const arrTrans = Array.isArray(translationData) ? translationData : [];
+
+    return arrShared.map((item, i) => {
+      const transItem = arrTrans[i];
+      return rebuildWithTranslation(item, transItem, schema.items, forTranslation);
+    });
   }
 
-  // primitive
-  return castPrimitive(sharedData, schema.type, schema.defaultValue);
+  return {};
 }
 
 export function rebuild(data: any, schema: any): any {
@@ -325,6 +347,22 @@ function rebuildObject(data: any, schema: any) {
 
   // If no properties and the original data was not an object, still return {}
   return output;
+}
+
+function isLocalizable(schema: any): boolean {
+  if (!schema) return false;
+
+  if (schema.localizable) return true;
+
+  if (schema.type === "object" && schema.properties) {
+    return Object.values(schema.properties).some(isLocalizable);
+  }
+
+  if (schema.type === "array" && schema.items) {
+    return isLocalizable(schema.items);
+  }
+
+  return false;
 }
 
 function rebuildArray(data: any, schema: any) {

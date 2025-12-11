@@ -185,6 +185,7 @@ class AttributeService extends BaseService {
     const newContentCollection = await this.contentCollectionService.buildSchema(contentCollection);
     await this.contentCollectionService.updateAttributeCount(contentCollection._id);
     const newSchema = await this.getValidationSchema(newContentCollection);
+
     await this.contentCollectionService.rebuildContentData(newContentCollection, newSchema);
 
     return newAttribute;

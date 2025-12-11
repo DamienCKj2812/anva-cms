@@ -318,16 +318,23 @@ class ContentCollectionService extends BaseService {
         contentId: contentDoc._id,
         isDefault: true,
       });
+      console.log({ defaultTranslationDoc });
 
-      const rebuiltSharedData = rebuildWithTranslation(contentDoc.data ?? {}, defaultTranslationDoc?.data ?? {}, fullSchema, false);
+      const rebuiltSharedData = rebuildWithTranslation(
+        contentDoc.data ?? {},
+        defaultTranslationDoc?.data ?? {},
+        fullSchema,
+        false, // shared mode
+      );
 
-      console.dir({ rebuiltSharedData }, { depth: null });
+      console.log({ rebuiltSharedData });
 
       await this.contentService
         .getCollection()
         .updateOne({ _id: contentDoc._id }, { $set: { data: rebuiltSharedData }, $currentDate: { updatedAt: true } });
 
-      // Rebuild each translation individually using a new cursor
+      contentDoc.data = rebuiltSharedData;
+
       const translationCursor = this.contentTranslationService.getCollection().find({
         contentId: contentDoc._id,
       });
@@ -336,12 +343,9 @@ class ContentCollectionService extends BaseService {
         const translationDoc = await translationCursor.next();
         if (!translationDoc) continue;
 
-        const rebuiltTranslationData = rebuildWithTranslation(
-          translationDoc.data ?? {},
-          contentDoc.data ?? {},
-          fullSchema,
-          true, // translation data
-        );
+        const rebuiltTranslationData = rebuildWithTranslation(translationDoc.data ?? {}, contentDoc.data ?? {}, fullSchema, true);
+
+        console.log({ rebuiltTranslationData });
 
         await this.contentTranslationService
           .getCollection()

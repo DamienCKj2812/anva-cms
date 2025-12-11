@@ -60,39 +60,36 @@ const attributeComponentController = (context: AppContext) => {
     }
   });
 
-  router.post("/:attributeId/update-attribute", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:attributeComponentId/:attributeId/update-attribute", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { attributeId } = req.params;
-      const attribute = await attributeService.findOne({ _id: new ObjectId(attributeId) });
-      if (!attribute) {
-        throw new NotFoundError("attribute not found");
+      const { at } = req.params;
+      const [existingAttributeComponent] = await Promise.all([attributeService.findOne({ _id: new ObjectId(req.params.attributeComponentId) })]);
+      if (!existingAttributeComponent) {
+        throw new NotFoundError("existingAttributeComponent not found");
       }
-      const attributeComponent = await attributeComponentService.findOne({ _id: attribute.componentRefId });
+      const attributeComponent = await attributeComponentService.addAttributeInComponent(req.body, existingAttributeComponent);
       if (!attributeComponent) {
-        throw new NotFoundError("attributeComponent not found");
+        throw new NotFoundError("attribute component not found");
       }
-      const updatedComponent = await attributeComponentService.updateAttributeInComponent(req.body, attribute, attributeComponent);
-
-      res.status(200).json(successResponse(updatedComponent));
+      res.status(200).json(successResponse(attributeComponent));
     } catch (err) {
       next(err);
     }
   });
 
-  router.post("/:attributeId/delete-attribute", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:attributeComponentId/update-attribute", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { attributeId } = req.params;
-      const attribute = await attributeService.findOne({ _id: new ObjectId(attributeId) });
-      if (!attribute) {
-        throw new NotFoundError("attribute not found");
+      const [existingAttributeComponent] = await Promise.all([
+        attributeComponentService.findOne({ _id: new ObjectId(req.params.attributeComponentId) }),
+      ]);
+      if (!existingAttributeComponent) {
+        throw new NotFoundError("existingAttributeComponent not found");
       }
-      const attributeComponent = await attributeComponentService.findOne({ _id: attribute.componentRefId });
+      const attributeComponent = await attributeComponentService.addAttributeInComponent(req.body, existingAttributeComponent);
       if (!attributeComponent) {
-        throw new NotFoundError("attributeComponent not found");
+        throw new NotFoundError("attribute component not found");
       }
-      const updatedComponent = await attributeComponentService.deleteAttributeInComponent(attribute, attributeComponent);
-
-      res.status(200).json(successResponse(updatedComponent));
+      res.status(200).json(successResponse(attributeComponent));
     } catch (err) {
       next(err);
     }

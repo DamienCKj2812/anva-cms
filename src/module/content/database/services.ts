@@ -12,13 +12,7 @@ import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
-import ajv, {
-  preValidateComponentPlaceholders,
-  rebuild,
-  recursiveReplace,
-  separateTranslatableFields,
-  splitSchemaByLocalizable,
-} from "../../../utils/helper.ajv";
+import ajv, { preValidateComponentPlaceholders, rebuild, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
 import { ContentTranslation, CreateContentTranslationData } from "../../content-translation/database/models";
 import TenantLocaleService from "../../tenant-locale/database/services";
 
@@ -170,10 +164,6 @@ class ContentService extends BaseService {
       // Filter schema to only non-localizable fields (shared)
       const { sharedSchema } = splitSchemaByLocalizable(fullSchema);
 
-      // Merge updated fields on top of existing shared data
-      const existingData = content.data || {};
-      const mergedData = recursiveReplace(existingData, data);
-
       try {
         preValidateComponentPlaceholders(sharedSchema);
       } catch (err) {
@@ -187,12 +177,10 @@ class ContentService extends BaseService {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
 
-      if (!validate(mergedData)) {
+      if (!validate(data)) {
         const errorText = ajv.errorsText(validate.errors, { separator: ", " });
         throw new ValidationError(`Data validation failed: ${errorText}`);
       }
-
-      updateData.data = mergedData;
     }
 
     if (status !== undefined && !Object.values(ContentStatusEnum).includes(status as ContentStatusEnum)) {
@@ -231,22 +219,6 @@ class ContentService extends BaseService {
     await this.contentTranslationService.getCollection().deleteMany({ contentId: content._id });
     await this.collection.deleteOne({ _id: content._id });
     return content;
-  }
-
-  async rebuildContentData(contentCollection: ContentCollection, schema: any) {
-    const cursor = this.collection.find({
-      contentCollectionId: contentCollection._id,
-    });
-
-    while (await cursor.hasNext()) {
-      const doc = await cursor.next();
-      if (!doc) continue;
-
-      // Rebuild the data field based on the new schema
-      const rebuiltData = rebuild(doc.data ?? {}, schema);
-
-      await this.collection.updateOne({ _id: doc._id }, { $set: { data: rebuiltData }, $currentDate: { updatedAt: true } });
-    }
   }
 }
 

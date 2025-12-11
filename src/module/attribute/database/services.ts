@@ -43,6 +43,7 @@ class AttributeService extends BaseService {
     "label",
     "required",
     "componentRefId",
+    "repeatable",
   ] as const);
   private static readonly ALLOWED_UPDATE_VALIDATION_FIELDS: ReadonlySet<keyof ValidationRules> = new Set([
     "minLength",
@@ -184,12 +185,7 @@ class AttributeService extends BaseService {
     const newContentCollection = await this.contentCollectionService.buildSchema(contentCollection);
     await this.contentCollectionService.updateAttributeCount(contentCollection._id);
     const newSchema = await this.getValidationSchema(newContentCollection);
-    const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(newSchema);
-
-    await Promise.all([
-      this.contentService.rebuildContentData(contentCollection, sharedSchema),
-      this.contentTranslationService.rebuildContentData(contentCollection, localizableSchema),
-    ]);
+    await this.contentCollectionService.rebuildContentData(newContentCollection, newSchema);
 
     return newAttribute;
   }
@@ -267,12 +263,7 @@ class AttributeService extends BaseService {
     }
     const newContentCollection = await this.contentCollectionService.buildSchema(contentCollection);
     const newSchema = await this.getValidationSchema(newContentCollection);
-    const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(newSchema);
-
-    await Promise.all([
-      this.contentService.rebuildContentData(contentCollection, sharedSchema),
-      this.contentTranslationService.rebuildContentData(contentCollection, localizableSchema),
-    ]);
+    await this.contentCollectionService.rebuildContentData(newContentCollection, newSchema);
     return updatedAttribute;
   }
 
@@ -280,7 +271,7 @@ class AttributeService extends BaseService {
     data: CreateComponentAttributeDTO,
     contentCollection: ContentCollection,
   ): Promise<{ validatedData: CreateComponentAttributeDTO; attributeComponent: AttributeComponent }> {
-    const { key, label, required, componentRefId } = data;
+    const { key, label, required, componentRefId, repeatable } = data;
     if (!("key" in data)) {
       throw new ValidationError('"key" field is required');
     }
@@ -292,6 +283,9 @@ class AttributeService extends BaseService {
     }
     if (!("componentRefId" in data)) {
       throw new ValidationError('"componentRefId" field is required');
+    }
+    if (!("repeatable" in data)) {
+      throw new ValidationError('"repeatable" field is required');
     }
     if (typeof key !== "string" || !key.trim()) {
       throw new ValidationError("key must be a non-empty string");
@@ -309,6 +303,9 @@ class AttributeService extends BaseService {
     if (typeof componentRefId !== "string" || !componentRefId.trim()) {
       throw new ValidationError("componentRefId must be a non-empty string");
     }
+    if (typeof repeatable !== "boolean") {
+      throw new ValidationError("repeatable must be a boolean");
+    }
     const component = await this.attributeComponentService.findOne({ _id: new ObjectId(componentRefId) });
     if (!component) {
       throw new NotFoundError("attribute component not found");
@@ -319,7 +316,7 @@ class AttributeService extends BaseService {
     };
   }
 
-  async createComponentAttribute(data: any, contentCollection: any): Promise<Attribute> {
+  async createComponentAttribute(data: CreateComponentAttributeDTO, contentCollection: any): Promise<Attribute> {
     const { validatedData, attributeComponent } = await this.createComponentAttributeValidation(data, contentCollection);
     const createdBy = getCurrentUserId(this.context);
 
@@ -333,6 +330,7 @@ class AttributeService extends BaseService {
       label: validatedData.label,
       attributeKind: AttributeKindEnum.COMPONENT,
       componentRefId: attributeComponent._id,
+      repeatable: validatedData.repeatable,
       required: validatedData.required,
       localizable: true,
       position: attributeCount,
@@ -346,9 +344,10 @@ class AttributeService extends BaseService {
     if (!result) {
       throw new Error("Failed to create the component attribute");
     }
-
-    await this.contentCollectionService.buildSchema(contentCollection);
-    await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
+    const newContentCollection = await this.contentCollectionService.buildSchema(contentCollection);
+    await this.contentCollectionService.updateAttributeCount(contentCollection._id);
+    const newSchema = await this.getValidationSchema(newContentCollection);
+    await this.contentCollectionService.rebuildContentData(newContentCollection, newSchema);
 
     return newAttribute;
   }
@@ -357,8 +356,8 @@ class AttributeService extends BaseService {
     if (attribute.attributeKind != AttributeKindEnum.COMPONENT) {
       throw new BadRequestError("only can modify the component attribute");
     }
-    const { label, required, componentRefId } = data;
-    if (!("key" in data) && !("label" in data) && !("required" in data) && !("componentRefId" in data)) {
+    const { label, required, componentRefId, repeatable } = data;
+    if (!("key" in data) && !("label" in data) && !("required" in data) && !("componentRefId" in data) && !("repeatable" in data)) {
       throw new NotFoundError("No valid fields provided for update");
     }
     if (label !== undefined && (typeof label !== "string" || !label.trim())) {
@@ -366,6 +365,9 @@ class AttributeService extends BaseService {
     }
     if (required !== undefined && typeof required !== "boolean") {
       throw new ValidationError("required must be a boolean");
+    }
+    if (repeatable !== undefined && !("repeatable" in data)) {
+      throw new ValidationError('"repeatable" field is required');
     }
     if (componentRefId !== undefined) {
       if (typeof componentRefId !== "string" || !componentRefId.trim()) {
@@ -399,12 +401,7 @@ class AttributeService extends BaseService {
     }
     const newContentCollection = await this.contentCollectionService.buildSchema(contentCollection);
     const newSchema = await this.getValidationSchema(newContentCollection);
-    const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(newSchema);
-
-    await Promise.all([
-      this.contentService.rebuildContentData(contentCollection, sharedSchema),
-      this.contentTranslationService.rebuildContentData(contentCollection, localizableSchema),
-    ]);
+    await this.contentCollectionService.rebuildContentData(newContentCollection, newSchema);
     return updatedAttribute;
   }
 
@@ -464,11 +461,7 @@ class AttributeService extends BaseService {
     await this.collection.deleteOne({ _id: attribute._id });
     const updatedCollection = await this.contentCollectionService.buildSchema(contentCollection);
     const fullSchema = await this.getValidationSchema(updatedCollection);
-    const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(fullSchema);
-    await Promise.all([
-      this.contentService.rebuildContentData(updatedCollection, sharedSchema),
-      this.contentTranslationService.rebuildContentData(updatedCollection, localizableSchema),
-    ]);
+    await this.contentCollectionService.rebuildContentData(updatedCollection, fullSchema);
 
     return { status: "success", data: attribute };
   }
@@ -579,12 +572,12 @@ class AttributeService extends BaseService {
 
     const schema = JSON.parse(JSON.stringify(contentCollection.schema));
 
-    // Ensure base object structure
     schema.type = schema.type ?? "object";
     schema.properties ||= {};
     schema.required ||= [];
     schema.additionalProperties = schema.additionalProperties ?? false;
 
+    // Lookup all component attributes and expand their schemas
     const attributesWithComponents = await this.collection
       .aggregate([
         { $match: { contentCollectionId: new ObjectId(contentCollection._id) } },
@@ -601,6 +594,7 @@ class AttributeService extends BaseService {
           $project: {
             key: 1,
             attributeKind: 1,
+            repeatable: 1,
             componentSchema: "$component.schema",
           },
         },
@@ -609,9 +603,20 @@ class AttributeService extends BaseService {
 
     for (const attr of attributesWithComponents) {
       if (attr.attributeKind === AttributeKindEnum.COMPONENT && attr.componentSchema) {
-        const finalSchema = {
-          ...attr.componentSchema,
-        };
+        let finalSchema: any;
+
+        if (attr.repeatable) {
+          // Repeatable → wrap in array
+          finalSchema = {
+            type: "array",
+            items: { ...attr.componentSchema },
+            minItems: 1,
+          };
+        } else {
+          // Not repeatable → single object
+          finalSchema = { ...attr.componentSchema };
+        }
+
         schema.properties[attr.key] = finalSchema;
       }
     }

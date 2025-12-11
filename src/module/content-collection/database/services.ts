@@ -11,7 +11,8 @@ import { BaseService } from "../../core/base-service";
 import AttributeService from "../../attribute/database/services";
 import ContentService from "../../content/database/services";
 import AttributeComponentService from "../../attribute-component/database/services";
-import { castPrimitive } from "../../../utils/helper.ajv";
+import { castPrimitive, rebuildWithTranslation } from "../../../utils/helper.ajv";
+import ContentTranslationService from "../../content-translation/database/services";
 
 class ContentCollectionService extends BaseService {
   private db: Db;
@@ -21,6 +22,7 @@ class ContentCollectionService extends BaseService {
   private tenantService: TenantService;
   private attributeService: AttributeService;
   private contentService: ContentService;
+  private contentTranslationService: ContentTranslationService;
   private attributeComponentService: AttributeComponentService;
 
   constructor(context: AppContext) {
@@ -33,6 +35,7 @@ class ContentCollectionService extends BaseService {
     this.tenantService = this.getService("TenantService");
     this.attributeService = this.getService("AttributeService");
     this.contentService = this.getService("ContentService");
+    this.contentTranslationService = this.getService("ContentTranslationService");
     this.attributeComponentService = this.getService("AttributeComponentService");
   }
 
@@ -251,12 +254,13 @@ class ContentCollectionService extends BaseService {
 
     for (const attribute of attributes) {
       const prop: any = {
-        type: attribute.attributeType,
+        type: attribute.attributeType, // primitive type, or 'object' for component
       };
 
       if (attribute.attributeKind === AttributeKindEnum.PRIMITIVE) {
         if (attribute.attributeFormat) prop.format = attribute.attributeFormat;
         if (attribute.enumValues) prop.enum = attribute.enumValues;
+
         if (attribute.defaultValue !== undefined && attribute.attributeType !== undefined) {
           prop.default = castPrimitive(attribute.defaultValue, attribute.attributeType);
         }
@@ -270,7 +274,11 @@ class ContentCollectionService extends BaseService {
         if (!attribute.componentRefId) {
           throw new ValidationError("componentRefId is required for component attribute");
         }
+
+        // Store reference and repeatable info only
         prop.componentRefId = attribute.componentRefId;
+        prop.repeatable = attribute.repeatable ?? false;
+        prop.type = "object"; // always store as object in metadata
       }
 
       if (attribute.required) {
@@ -291,6 +299,55 @@ class ContentCollectionService extends BaseService {
     }
 
     return updated;
+  }
+
+  async rebuildContentData(contentCollection: ContentCollection, fullSchema: any) {
+    // Cursor for all content documents
+    const contentCursor = this.contentService.getCollection().find({
+      contentCollectionId: contentCollection._id,
+    });
+
+    console.dir({ fullSchema }, { depth: null });
+
+    while (await contentCursor.hasNext()) {
+      const contentDoc = await contentCursor.next();
+      if (!contentDoc) continue;
+
+      // default content translation from current content
+      const defaultTranslationDoc = await this.contentTranslationService.getCollection().findOne({
+        contentId: contentDoc._id,
+        isDefault: true,
+      });
+
+      const rebuiltSharedData = rebuildWithTranslation(contentDoc.data ?? {}, defaultTranslationDoc?.data ?? {}, fullSchema, false);
+
+      console.dir({ rebuiltSharedData }, { depth: null });
+
+      await this.contentService
+        .getCollection()
+        .updateOne({ _id: contentDoc._id }, { $set: { data: rebuiltSharedData }, $currentDate: { updatedAt: true } });
+
+      // Rebuild each translation individually using a new cursor
+      const translationCursor = this.contentTranslationService.getCollection().find({
+        contentId: contentDoc._id,
+      });
+
+      while (await translationCursor.hasNext()) {
+        const translationDoc = await translationCursor.next();
+        if (!translationDoc) continue;
+
+        const rebuiltTranslationData = rebuildWithTranslation(
+          translationDoc.data ?? {},
+          contentDoc.data ?? {},
+          fullSchema,
+          true, // translation data
+        );
+
+        await this.contentTranslationService
+          .getCollection()
+          .updateOne({ _id: translationDoc._id }, { $set: { data: rebuiltTranslationData }, $currentDate: { updatedAt: true } });
+      }
+    }
   }
 }
 

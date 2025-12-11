@@ -54,26 +54,6 @@ export function preValidateComponentPlaceholders(schema: any, path = "data") {
   }
 }
 
-export function recursiveReplace(target: any, source: any): any {
-  if (source === undefined) {
-    return target;
-  }
-
-  if (Array.isArray(source)) {
-    return source;
-  }
-
-  if (source && typeof source === "object") {
-    target = target || {};
-    for (const key of Object.keys(source)) {
-      target[key] = recursiveReplace(target[key], source[key]);
-    }
-    return target;
-  }
-
-  return source;
-}
-
 export function splitSchemaByLocalizable(schema: any): {
   sharedSchema: any | null;
   localizableSchema: any | null;
@@ -218,7 +198,7 @@ export function mergeTranslatableFields(shared: any, translation: any, schema: a
  */
 export function separateTranslatableFields(data: any, schema: any): { shared: any; translation: any } {
   if (!schema || data == null) {
-    return { shared: null, translation: null };
+    return { shared: {}, translation: {} };
   }
 
   // ARRAY case
@@ -229,19 +209,21 @@ export function separateTranslatableFields(data: any, schema: any): { shared: an
 
     for (const item of validArray) {
       const separated = separateTranslatableFields(item, schema.items);
-      if (separated.shared) sharedArr.push(separated.shared);
-      if (separated.translation) transArr.push(separated.translation);
+      if (Object.keys(separated.shared).length > 0) sharedArr.push(separated.shared);
+      if (Object.keys(separated.translation).length > 0) transArr.push(separated.translation);
     }
 
     return {
-      shared: sharedArr.length > 0 ? sharedArr : null,
-      translation: transArr.length > 0 ? transArr : null,
+      shared: sharedArr,
+      translation: transArr,
     };
   }
 
   // OBJECT case
   if (schema.type === "object") {
-    if (typeof data !== "object") return { shared: null, translation: null };
+    if (typeof data !== "object" || data === null) {
+      return { shared: {}, translation: {} };
+    }
 
     const shared: any = {};
     const translation: any = {};
@@ -257,8 +239,8 @@ export function separateTranslatableFields(data: any, schema: any): { shared: an
 
       if (fieldSchema.type === "object" || fieldSchema.type === "array") {
         const separated = separateTranslatableFields(fieldValue, fieldSchema);
-        if (separated.shared !== null) shared[key] = separated.shared;
-        if (separated.translation !== null) translation[key] = separated.translation;
+        if (Object.keys(separated.shared).length > 0) shared[key] = separated.shared;
+        if (Object.keys(separated.translation).length > 0) translation[key] = separated.translation;
       } else {
         if (fieldSchema.localizable) {
           translation[key] = fieldValue;
@@ -268,17 +250,44 @@ export function separateTranslatableFields(data: any, schema: any): { shared: an
       }
     }
 
-    return {
-      shared: Object.keys(shared).length > 0 ? shared : null,
-      translation: Object.keys(translation).length > 0 ? translation : null,
-    };
+    return { shared, translation };
   }
 
   // PRIMITIVE fallback
-  return {
-    shared: schema.localizable ? null : data,
-    translation: schema.localizable ? data : null,
-  };
+  if (schema.localizable) {
+    return { shared: {}, translation: data };
+  } else {
+    return { shared: data, translation: {} };
+  }
+}
+
+export function rebuildWithTranslation(sharedData: any, translationData: any, schema: any, forTranslation = false): any {
+  if (!schema) return {};
+
+  if (schema.type === "object") {
+    const output: any = {};
+
+    for (const key of Object.keys(schema.properties || {})) {
+      const fieldSchema = schema.properties[key];
+
+      if (forTranslation && !fieldSchema.localizable) continue;
+      if (!forTranslation && fieldSchema.localizable) continue;
+
+      const value = forTranslation ? (translationData?.[key] ?? sharedData?.[key]) : (sharedData?.[key] ?? translationData?.[key]);
+
+      output[key] = rebuildWithTranslation(value, forTranslation ? {} : translationData?.[key], fieldSchema, forTranslation);
+    }
+
+    return output;
+  }
+
+  if (schema.type === "array") {
+    const arrData = Array.isArray(sharedData) ? sharedData : [];
+    return arrData.map((item, i) => rebuildWithTranslation(item, translationData?.[i] ?? {}, schema.items, forTranslation));
+  }
+
+  // primitive
+  return castPrimitive(sharedData, schema.type, schema.defaultValue);
 }
 
 export function rebuild(data: any, schema: any): any {

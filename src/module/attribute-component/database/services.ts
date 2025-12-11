@@ -42,7 +42,7 @@ class AttributeComponentService extends BaseService {
     if (!/^[A-Za-z0-9]+$/.test(data.category)) {
       throw new ValidationError("category may only contain letters and numbers (no spaces or symbols)");
     }
-    const { key, label, category, repeatable } = data;
+    const { key, label, category } = data;
     if (!("key" in data)) {
       throw new ValidationError('"key" field is required');
     }
@@ -52,9 +52,6 @@ class AttributeComponentService extends BaseService {
     if (!("category" in data)) {
       throw new ValidationError('"category" field is required');
     }
-    if (!("repeatable" in data)) {
-      throw new ValidationError('"repeatable" field is required');
-    }
     if (typeof key !== "string" || !key.trim()) {
       throw new ValidationError("key must be a non-empty string");
     }
@@ -63,9 +60,6 @@ class AttributeComponentService extends BaseService {
     }
     if (typeof category !== "string" || !category.trim()) {
       throw new ValidationError("category must be a non-empty string");
-    }
-    if (typeof repeatable !== "boolean") {
-      throw new ValidationError("repeatable must be a boolean");
     }
     const existedKey = await this.collection.findOne({ tenantId: tenant._id, category, key });
     if (existedKey) {
@@ -87,7 +81,6 @@ class AttributeComponentService extends BaseService {
       category: validatedData.category,
       schema: {},
       attributes: [],
-      repeatable: validatedData.repeatable,
       createdBy,
       createdAt: new Date(),
       updatedAt: null,
@@ -238,31 +231,14 @@ class AttributeComponentService extends BaseService {
   }
 
   async buildSchemaForComponent(attributeComponent: AttributeComponent): Promise<any> {
-    const isRepeatable = attributeComponent.repeatable;
-
     let schema: any;
-    let targetSchema: any;
 
-    if (isRepeatable) {
-      schema = {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {},
-          required: [] as string[],
-          additionalProperties: false,
-        },
-      };
-      targetSchema = schema.items;
-    } else {
-      schema = {
-        type: "object",
-        properties: {},
-        required: [] as string[],
-        additionalProperties: false,
-      };
-      targetSchema = schema;
-    }
+    schema = {
+      type: "object",
+      properties: {},
+      required: [] as string[],
+      additionalProperties: false,
+    };
 
     const attributes = await this.attributeService.findMany(
       {
@@ -297,10 +273,10 @@ class AttributeComponentService extends BaseService {
         Object.assign(property, attribute.validation);
       }
 
-      targetSchema.properties[attribute.key] = property;
+      schema.properties[attribute.key] = property;
 
       if (attribute.required) {
-        targetSchema.required.push(attribute.key);
+        schema.required.push(attribute.key);
       }
     }
 

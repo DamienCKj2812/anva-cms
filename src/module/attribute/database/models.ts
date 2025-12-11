@@ -40,7 +40,8 @@ export interface Attribute {
   componentRefId?: ObjectId;
   // multiple component references (for DYNAMIC_ZONE)
   componentRefIds?: ObjectId[];
-
+  // only for component attribute
+  repeatable?: boolean;
   attributeType?: AttributeTypeEnum;
   attributeFormat?: AttributeFormatEnum;
   required: boolean;
@@ -72,6 +73,7 @@ export interface CreatePrimitiveAttributeDTO extends CreateAttributeBaseDTO {
 // used when the user add a component as field, just a placeholder, hence no need to store the value
 export interface CreateComponentAttributeDTO extends CreateAttributeBaseDTO {
   componentRefId: string;
+  repeatable: boolean;
 }
 
 // used when the user add a dynamic as field, just a placeholder, hence no need to store the value
@@ -95,4 +97,5 @@ export interface UpdatePrimitiveAttributeDTO extends UpdateAttributeBaseDto {
 
 export interface UpdateComponentAttributeDto extends UpdateAttributeBaseDto {
   componentRefId?: string;
+  repeatable?: boolean;
 }

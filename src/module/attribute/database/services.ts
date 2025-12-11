@@ -12,6 +12,7 @@ import {
   AttributeTypeEnum,
   CreateComponentAttributeDTO,
   CreatePrimitiveAttributeDTO,
+  UpdateComponentAttributeDto,
   UpdatePrimitiveAttributeDTO,
   ValidationRules,
 } from "./models";
@@ -37,6 +38,11 @@ class AttributeService extends BaseService {
     "defaultValue",
     "enumValues",
     "validation",
+  ] as const);
+  private static readonly ALLOWED_UPDATE_COMPONENT_FIELDS: ReadonlySet<keyof UpdateComponentAttributeDto> = new Set([
+    "label",
+    "required",
+    "componentRefId",
   ] as const);
   private static readonly ALLOWED_UPDATE_VALIDATION_FIELDS: ReadonlySet<keyof ValidationRules> = new Set([
     "minLength",
@@ -188,106 +194,6 @@ class AttributeService extends BaseService {
     return newAttribute;
   }
 
-  private async createComponentAttributeValidation(
-    data: CreateComponentAttributeDTO,
-    contentCollection: ContentCollection,
-  ): Promise<{ validatedData: CreateComponentAttributeDTO; attributeComponent: AttributeComponent }> {
-    const { key, label, required, componentRefId } = data;
-    if (!("key" in data)) {
-      throw new ValidationError('"key" field is required');
-    }
-    if (!("label" in data)) {
-      throw new ValidationError('"label" field is required');
-    }
-    if (!("required" in data)) {
-      throw new ValidationError('"required" field is required');
-    }
-    if (!("componentRefId" in data)) {
-      throw new ValidationError('"componentRefId" field is required');
-    }
-    if (typeof key !== "string" || !key.trim()) {
-      throw new ValidationError("key must be a non-empty string");
-    }
-    const existKey = await this.collection.findOne({ contentCollectionId: contentCollection._id, key });
-    if (existKey) {
-      throw new ValidationError("key is already exists in this contente collection");
-    }
-    if (typeof label !== "string" || !label.trim()) {
-      throw new ValidationError("label must be a non-empty string");
-    }
-    if (typeof required !== "boolean") {
-      throw new ValidationError("required must be a boolean");
-    }
-    if (typeof componentRefId !== "string" || !componentRefId.trim()) {
-      throw new ValidationError("componentRefId must be a non-empty string");
-    }
-    const component = await this.attributeComponentService.findOne({ _id: new ObjectId(componentRefId) });
-    if (!component) {
-      throw new NotFoundError("attribute component not found");
-    }
-    return {
-      validatedData: data,
-      attributeComponent: component,
-    };
-  }
-
-  async createComponentAttribute(data: any, contentCollection: any): Promise<Attribute> {
-    const { validatedData, attributeComponent } = await this.createComponentAttributeValidation(data, contentCollection);
-    const createdBy = getCurrentUserId(this.context);
-
-    const attributeCount = await this.collection.countDocuments({ contentCollectionId: contentCollection._id });
-
-    const newAttribute: Attribute = {
-      _id: new ObjectId(),
-      contentCollectionId: contentCollection._id,
-
-      key: validatedData.key,
-      label: validatedData.label,
-      attributeKind: AttributeKindEnum.COMPONENT,
-      componentRefId: attributeComponent._id,
-      required: validatedData.required,
-      localizable: true,
-      position: attributeCount,
-      createdBy,
-      createdAt: new Date(),
-      updatedAt: null,
-    };
-
-    //  Insert the new placeholder attribute (CRITICAL STEP)
-    const result = await this.collection.insertOne(newAttribute);
-    if (!result) {
-      throw new Error("Failed to create the component attribute");
-    }
-
-    await this.contentCollectionService.buildSchema(contentCollection);
-    await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
-
-    return newAttribute;
-  }
-
-  async getAll(queryOptions: QueryOptions): Promise<WithMetaData<Attribute>> {
-    const options = {
-      ...queryOptions,
-      filter: {
-        ...(queryOptions.filter || {}),
-      },
-    };
-    return await findWithOptions(this.collection, options);
-  }
-
-  async getById(id: string): Promise<Attribute | null> {
-    validateObjectId(id);
-    return await this.collection.findOne({ _id: new ObjectId(id) });
-  }
-
-  async findOne(filter: Partial<Attribute>, options?: FindOptions<Attribute>): Promise<Attribute | null> {
-    return await this.collection.findOne(filter, options);
-  }
-
-  async findMany(filter: Filter<Attribute>, options?: FindOptions<Attribute>): Promise<Attribute[]> {
-    return this.collection.find(filter, options).toArray();
-  }
-
   private async updatePrimitiveAttributeValidation(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<UpdatePrimitiveAttributeDTO> {
     const { label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
     if (attribute.attributeKind != AttributeKindEnum.PRIMITIVE) {
@@ -368,6 +274,161 @@ class AttributeService extends BaseService {
       this.contentTranslationService.rebuildContentData(contentCollection, localizableSchema),
     ]);
     return updatedAttribute;
+  }
+
+  private async createComponentAttributeValidation(
+    data: CreateComponentAttributeDTO,
+    contentCollection: ContentCollection,
+  ): Promise<{ validatedData: CreateComponentAttributeDTO; attributeComponent: AttributeComponent }> {
+    const { key, label, required, componentRefId } = data;
+    if (!("key" in data)) {
+      throw new ValidationError('"key" field is required');
+    }
+    if (!("label" in data)) {
+      throw new ValidationError('"label" field is required');
+    }
+    if (!("required" in data)) {
+      throw new ValidationError('"required" field is required');
+    }
+    if (!("componentRefId" in data)) {
+      throw new ValidationError('"componentRefId" field is required');
+    }
+    if (typeof key !== "string" || !key.trim()) {
+      throw new ValidationError("key must be a non-empty string");
+    }
+    const existKey = await this.collection.findOne({ contentCollectionId: contentCollection._id, key });
+    if (existKey) {
+      throw new ValidationError("key is already exists in this contente collection");
+    }
+    if (typeof label !== "string" || !label.trim()) {
+      throw new ValidationError("label must be a non-empty string");
+    }
+    if (typeof required !== "boolean") {
+      throw new ValidationError("required must be a boolean");
+    }
+    if (typeof componentRefId !== "string" || !componentRefId.trim()) {
+      throw new ValidationError("componentRefId must be a non-empty string");
+    }
+    const component = await this.attributeComponentService.findOne({ _id: new ObjectId(componentRefId) });
+    if (!component) {
+      throw new NotFoundError("attribute component not found");
+    }
+    return {
+      validatedData: data,
+      attributeComponent: component,
+    };
+  }
+
+  async createComponentAttribute(data: any, contentCollection: any): Promise<Attribute> {
+    const { validatedData, attributeComponent } = await this.createComponentAttributeValidation(data, contentCollection);
+    const createdBy = getCurrentUserId(this.context);
+
+    const attributeCount = await this.collection.countDocuments({ contentCollectionId: contentCollection._id });
+
+    const newAttribute: Attribute = {
+      _id: new ObjectId(),
+      contentCollectionId: contentCollection._id,
+
+      key: validatedData.key,
+      label: validatedData.label,
+      attributeKind: AttributeKindEnum.COMPONENT,
+      componentRefId: attributeComponent._id,
+      required: validatedData.required,
+      localizable: true,
+      position: attributeCount,
+      createdBy,
+      createdAt: new Date(),
+      updatedAt: null,
+    };
+
+    //  Insert the new placeholder attribute (CRITICAL STEP)
+    const result = await this.collection.insertOne(newAttribute);
+    if (!result) {
+      throw new Error("Failed to create the component attribute");
+    }
+
+    await this.contentCollectionService.buildSchema(contentCollection);
+    await this.contentCollectionService.updateAttributeCount(contentCollection._id!);
+
+    return newAttribute;
+  }
+
+  private async updateComponentAttributeValidation(attribute: Attribute, data: UpdateComponentAttributeDto): Promise<UpdateComponentAttributeDto> {
+    if (attribute.attributeKind != AttributeKindEnum.COMPONENT) {
+      throw new BadRequestError("only can modify the component attribute");
+    }
+    const { label, required, componentRefId } = data;
+    if (!("key" in data) && !("label" in data) && !("required" in data) && !("componentRefId" in data)) {
+      throw new NotFoundError("No valid fields provided for update");
+    }
+    if (label !== undefined && (typeof label !== "string" || !label.trim())) {
+      throw new ValidationError("label must be a non-empty string");
+    }
+    if (required !== undefined && typeof required !== "boolean") {
+      throw new ValidationError("required must be a boolean");
+    }
+    if (componentRefId !== undefined) {
+      if (typeof componentRefId !== "string" || !componentRefId.trim()) {
+        throw new ValidationError("componentRefId must be a non-empty string");
+      }
+
+      const component = await this.attributeComponentService.findOne({ _id: new ObjectId(componentRefId) });
+      if (!component) {
+        throw new NotFoundError("attribute component not found");
+      }
+    }
+
+    return data;
+  }
+
+  async updateComponentAttribute(attribute: Attribute, data: any, contentCollection: ContentCollection): Promise<Attribute> {
+    const filteredUpdateData = filterFields(data, AttributeService.ALLOWED_UPDATE_COMPONENT_FIELDS);
+    const { componentRefId, ...rest } = await this.updateComponentAttributeValidation(attribute, filteredUpdateData);
+    const updatingFields: Partial<Attribute> = {
+      ...rest,
+      ...(componentRefId ? { componentRefId: new ObjectId(componentRefId) } : {}),
+    };
+    console.log({ updatingFields });
+    const updatedAttribute = await this.collection.findOneAndUpdate(
+      { _id: attribute._id },
+      { $set: updatingFields, $currentDate: { updatedAt: true } },
+      { returnDocument: "after" },
+    );
+    if (!updatedAttribute) {
+      throw new NotFoundError("failed to update contentCollection");
+    }
+    const newContentCollection = await this.contentCollectionService.buildSchema(contentCollection);
+    const newSchema = await this.getValidationSchema(newContentCollection);
+    const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(newSchema);
+
+    await Promise.all([
+      this.contentService.rebuildContentData(contentCollection, sharedSchema),
+      this.contentTranslationService.rebuildContentData(contentCollection, localizableSchema),
+    ]);
+    return updatedAttribute;
+  }
+
+  async getAll(queryOptions: QueryOptions): Promise<WithMetaData<Attribute>> {
+    const options = {
+      ...queryOptions,
+      filter: {
+        ...(queryOptions.filter || {}),
+      },
+    };
+    return await findWithOptions(this.collection, options);
+  }
+
+  async getById(id: string): Promise<Attribute | null> {
+    validateObjectId(id);
+    return await this.collection.findOne({ _id: new ObjectId(id) });
+  }
+
+  async findOne(filter: Partial<Attribute>, options?: FindOptions<Attribute>): Promise<Attribute | null> {
+    return await this.collection.findOne(filter, options);
+  }
+
+  async findMany(filter: Filter<Attribute>, options?: FindOptions<Attribute>): Promise<Attribute[]> {
+    return this.collection.find(filter, options).toArray();
   }
 
   async delete(attribute: Attribute, contentCollection: ContentCollection): Promise<{ status: "success" | "failed"; data: any }> {

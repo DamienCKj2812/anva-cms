@@ -3,7 +3,6 @@ import { successResponse } from "../../utils/helper.response";
 import { ForbiddenError, NotFoundError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
-import { withDynamicFieldSettings } from "../../utils/helper.fieldSetting";
 import { AppContext } from "../../utils/helper.context";
 import { validateObjectId } from "../../utils/helper.mongo";
 import { ObjectId } from "mongodb";
@@ -77,28 +76,43 @@ const attributeController = (context: AppContext) => {
     }
   });
 
-  router.post(
-    "/:id/update",
-    ...withDynamicFieldSettings(attributeService.collectionName, context),
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const { id } = req.params;
-        const attribute = await attributeService.getById(id);
-        if (!attribute) {
-          throw new NotFoundError("attribute not found");
-        }
-        const contentCollection = await contentCollectionService.findOne({ _id: attribute.contentCollectionId });
-        if (!contentCollection) {
-          throw new NotFoundError("contentCollection not found");
-        }
-        const updatedAttribute = await attributeService.updatePrimitiveAttribute(attribute, req.body, contentCollection);
-        res.status(200).json(successResponse(updatedAttribute));
-      } catch (err) {
-        await cleanupUploadedFiles(req);
-        next(err);
+  router.post("/:id/update-primitive", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const attribute = await attributeService.getById(id);
+      if (!attribute) {
+        throw new NotFoundError("attribute not found");
       }
-    },
-  );
+      const contentCollection = await contentCollectionService.findOne({ _id: attribute.contentCollectionId });
+      if (!contentCollection) {
+        throw new NotFoundError("contentCollection not found");
+      }
+      const updatedAttribute = await attributeService.updatePrimitiveAttribute(attribute, req.body, contentCollection);
+      res.status(200).json(successResponse(updatedAttribute));
+    } catch (err) {
+      await cleanupUploadedFiles(req);
+      next(err);
+    }
+  });
+
+  router.post("/:id/update-component", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const attribute = await attributeService.getById(id);
+      if (!attribute) {
+        throw new NotFoundError("attribute not found");
+      }
+      const contentCollection = await contentCollectionService.findOne({ _id: attribute.contentCollectionId });
+      if (!contentCollection) {
+        throw new NotFoundError("contentCollection not found");
+      }
+      const updatedAttribute = await attributeService.updateComponentAttribute(attribute, req.body, contentCollection);
+      res.status(200).json(successResponse(updatedAttribute));
+    } catch (err) {
+      await cleanupUploadedFiles(req);
+      next(err);
+    }
+  });
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {

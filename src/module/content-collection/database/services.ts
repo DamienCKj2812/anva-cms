@@ -344,7 +344,7 @@ class ContentCollectionService extends BaseService {
         const translationDoc = await translationCursor.next();
         if (!translationDoc) continue;
 
-        const rebuiltTranslationData = rebuildWithTranslation(translationDoc.data ?? {}, contentDoc.data ?? {}, fullSchema, true);
+        const rebuiltTranslationData = rebuildWithTranslation(contentDoc.data ?? {}, translationDoc.data ?? {}, fullSchema, true);
 
         console.log({ originalTranslationDoc: translationDoc.data });
         console.log({ rebuiltTranslationData });

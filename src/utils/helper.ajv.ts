@@ -305,7 +305,7 @@ export function rebuildWithTranslation(sharedData: any, translationData: any, sc
     let arrShared: any[];
     let arrTrans: any[];
 
-    // Promote single object → array if old data is object
+    // Promote single object → array if old sharedData is object
     if (Array.isArray(sharedData)) arrShared = sharedData;
     else if (sharedData !== undefined && sharedData !== null) arrShared = [sharedData];
     else arrShared = [];
@@ -314,7 +314,12 @@ export function rebuildWithTranslation(sharedData: any, translationData: any, sc
     else if (translationData !== undefined && translationData !== null) arrTrans = [translationData];
     else arrTrans = [];
 
-    // Merge shared & translation items 1:1
+    // If shared array is empty and forTranslation=false → fallback to translation array
+    if (!forTranslation && arrShared.length === 0 && arrTrans.length > 0) {
+      arrShared = arrTrans;
+      arrTrans = [];
+    }
+
     return arrShared.map((item, i) => {
       const transItem = arrTrans[i];
       return rebuildWithTranslation(item, transItem, schema.items, forTranslation);

@@ -269,11 +269,13 @@ export function rebuildWithTranslation(sharedData: any, translationData: any, sc
   // ----- BASE CASE: primitive -----
   if (schema.type !== "object" && schema.type !== "array") {
     if (!schemaLocalizable) {
-      // shared-only field
-      return castPrimitive(sharedData, schema.type, schema.defaultValue);
+      // If converting from localizable → non-localizable, sharedData may be undefined,
+      // so fallback to translationData.
+      const value = sharedData ?? translationData;
+      return castPrimitive(value, schema.type, schema.defaultValue);
     }
 
-    // translation OR fallback to shared
+    // LOCALIZABLE FIELD:
     return castPrimitive(forTranslation ? (translationData ?? sharedData) : (sharedData ?? translationData), schema.type, schema.defaultValue);
   }
 
@@ -300,9 +302,19 @@ export function rebuildWithTranslation(sharedData: any, translationData: any, sc
 
   // ----- ARRAY CASE -----
   if (schema.type === "array") {
-    const arrShared = Array.isArray(sharedData) ? sharedData : [];
-    const arrTrans = Array.isArray(translationData) ? translationData : [];
+    let arrShared: any[];
+    let arrTrans: any[];
 
+    // Promote single object → array if old data is object
+    if (Array.isArray(sharedData)) arrShared = sharedData;
+    else if (sharedData !== undefined && sharedData !== null) arrShared = [sharedData];
+    else arrShared = [];
+
+    if (Array.isArray(translationData)) arrTrans = translationData;
+    else if (translationData !== undefined && translationData !== null) arrTrans = [translationData];
+    else arrTrans = [];
+
+    // Merge shared & translation items 1:1
     return arrShared.map((item, i) => {
       const transItem = arrTrans[i];
       return rebuildWithTranslation(item, transItem, schema.items, forTranslation);

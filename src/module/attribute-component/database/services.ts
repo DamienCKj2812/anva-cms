@@ -57,6 +57,10 @@ class AttributeComponentService extends BaseService {
     this.contentCollectionService = this.getService("ContentCollectionService");
   }
 
+  getCollection(): Collection<AttributeComponent> {
+    return this.collection;
+  }
+
   private async createValidation(data: CreateAttributeComponentDto, tenant: Tenant): Promise<CreateAttributeComponentDto> {
     // --- SANITIZATION ---
     if (typeof data.key === "string") {

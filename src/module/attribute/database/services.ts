@@ -573,15 +573,16 @@ class AttributeService extends BaseService {
 
     const schema = JSON.parse(JSON.stringify(contentCollection.schema));
 
-    schema.type = schema.type ?? "object";
+    schema.type = "object";
     schema.properties ||= {};
     schema.required ||= [];
-    schema.additionalProperties = schema.additionalProperties ?? false;
+    schema.additionalProperties ??= false;
 
-    // Lookup all component attributes and expand their schemas
-    const attributesWithComponents = await this.collection
+    const attrs = await this.collection
       .aggregate([
-        { $match: { contentCollectionId: new ObjectId(contentCollection._id) } },
+        {
+          $match: { contentCollectionId: new ObjectId(contentCollection._id) },
+        },
         {
           $lookup: {
             from: "attribute-components",
@@ -590,39 +591,75 @@ class AttributeService extends BaseService {
             as: "component",
           },
         },
-        { $unwind: { path: "$component", preserveNullAndEmptyArrays: true } },
         {
-          $project: {
-            key: 1,
-            attributeKind: 1,
-            repeatable: 1,
-            componentSchema: "$component.schema",
+          $unwind: {
+            path: "$component",
+            preserveNullAndEmptyArrays: true,
           },
         },
       ])
       .toArray();
 
-    for (const attr of attributesWithComponents) {
-      if (attr.attributeKind === AttributeKindEnum.COMPONENT && attr.componentSchema) {
-        let finalSchema: any;
+    for (const attr of attrs) {
+      let finalSchema: any = null;
+
+      // PRIMITIVE and COMPONENT_PRIMITIVE
+      if (attr.attributeKind === AttributeKindEnum.PRIMITIVE || attr.attributeKind === AttributeKindEnum.COMPONENT_PRIMITIVE) {
+        finalSchema = {
+          type: attr.attributeType,
+          format: attr.attributeFormat,
+          defaultValue: attr.defaultValue,
+          enum: attr.enumValues,
+          localizable: attr.localizable,
+          ...this.buildValidationRules(attr.validation),
+        };
+
+        schema.properties[attr.key] = finalSchema;
+        if (attr.required && !schema.required.includes(attr.key)) {
+          schema.required.push(attr.key);
+        }
+        continue;
+      }
+
+      // COMPONENT
+      if (attr.attributeKind === AttributeKindEnum.COMPONENT) {
+        const componentSchema = attr.component?.schema;
+
+        if (!componentSchema) {
+          console.warn(`⚠ Missing component schema for attribute: ${attr.key}`);
+          continue;
+        }
 
         if (attr.repeatable) {
-          // Repeatable → wrap in array
           finalSchema = {
             type: "array",
-            items: { ...attr.componentSchema },
-            minItems: 1,
+            items: componentSchema,
+            minItems: 0,
           };
         } else {
-          // Not repeatable → single object
-          finalSchema = { ...attr.componentSchema };
+          finalSchema = componentSchema;
         }
 
         schema.properties[attr.key] = finalSchema;
+        if (attr.required && !schema.required.includes(attr.key)) {
+          schema.required.push(attr.key);
+        }
+        continue;
       }
     }
+    console.dir({ schema }, { depth: null });
 
     return schema;
+  }
+
+  private buildValidationRules(v: ValidationRules = {}) {
+    const rules: any = {};
+    if (v.minLength !== undefined) rules.minLength = v.minLength;
+    if (v.maxLength !== undefined) rules.maxLength = v.maxLength;
+    if (v.minimum !== undefined) rules.minimum = v.minimum;
+    if (v.maximum !== undefined) rules.maximum = v.maximum;
+    if (v.pattern !== undefined) rules.pattern = v.pattern;
+    return rules;
   }
 }
 

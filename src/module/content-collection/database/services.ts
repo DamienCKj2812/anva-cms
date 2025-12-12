@@ -318,7 +318,7 @@ class ContentCollectionService extends BaseService {
         contentId: contentDoc._id,
         isDefault: true,
       });
-      console.log({ defaultTranslationDoc });
+      console.log({ defaultTranslationDoc: defaultTranslationDoc?.data });
 
       const rebuiltSharedData = rebuildWithTranslation(
         contentDoc.data ?? {},
@@ -327,6 +327,7 @@ class ContentCollectionService extends BaseService {
         false, // shared mode
       );
 
+      console.log({ originalSharedDoc: contentDoc.data });
       console.log({ rebuiltSharedData });
 
       await this.contentService
@@ -345,6 +346,7 @@ class ContentCollectionService extends BaseService {
 
         const rebuiltTranslationData = rebuildWithTranslation(translationDoc.data ?? {}, contentDoc.data ?? {}, fullSchema, true);
 
+        console.log({ originalTranslationDoc: translationDoc.data });
         console.log({ rebuiltTranslationData });
 
         await this.contentTranslationService

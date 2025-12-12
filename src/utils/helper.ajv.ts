@@ -266,16 +266,15 @@ export function rebuildWithTranslation(sharedData: any, translationData: any, sc
 
   const schemaLocalizable = isLocalizable(schema);
 
-  // ----- BASE CASE: primitive -----
+  // ----- PRIMITIVE CASE -----
   if (schema.type !== "object" && schema.type !== "array") {
     if (!schemaLocalizable) {
-      // If converting from localizable → non-localizable, sharedData may be undefined,
-      // so fallback to translationData.
+      // Shared-only field; fallback to translation if sharedData is missing
       const value = sharedData ?? translationData;
       return castPrimitive(value, schema.type, schema.defaultValue);
     }
 
-    // LOCALIZABLE FIELD:
+    // Localizable field
     return castPrimitive(forTranslation ? (translationData ?? sharedData) : (sharedData ?? translationData), schema.type, schema.defaultValue);
   }
 
@@ -287,12 +286,18 @@ export function rebuildWithTranslation(sharedData: any, translationData: any, sc
       const fieldSchema = schema.properties[key];
       const fieldLocalizable = isLocalizable(fieldSchema);
 
-      // skip fields that don't belong in this pass
+      // Skip fields not belonging in this pass
       if (forTranslation && !fieldLocalizable) continue;
       if (!forTranslation && fieldLocalizable) continue;
 
-      const sharedValue = sharedData?.[key];
-      const transValue = translationData?.[key];
+      let sharedValue = sharedData?.[key];
+      let transValue = translationData?.[key];
+
+      // Array → object promotion per field
+      if (fieldSchema.type === "object") {
+        if (Array.isArray(sharedValue) && sharedValue.length > 0) sharedValue = sharedValue[0];
+        if (Array.isArray(transValue) && transValue.length > 0) transValue = transValue[0];
+      }
 
       output[key] = rebuildWithTranslation(sharedValue, transValue, fieldSchema, forTranslation);
     }
@@ -302,96 +307,41 @@ export function rebuildWithTranslation(sharedData: any, translationData: any, sc
 
   // ----- ARRAY CASE -----
   if (schema.type === "array") {
-    let arrShared: any[];
-    let arrTrans: any[];
+    let arr: any[];
+    let arrOther: any[];
 
-    // Promote single object → array if old sharedData is object
-    if (Array.isArray(sharedData)) arrShared = sharedData;
-    else if (sharedData !== undefined && sharedData !== null) arrShared = [sharedData];
-    else arrShared = [];
-
-    if (Array.isArray(translationData)) arrTrans = translationData;
-    else if (translationData !== undefined && translationData !== null) arrTrans = [translationData];
-    else arrTrans = [];
-
-    // If shared array is empty and forTranslation=false → fallback to translation array
-    if (!forTranslation && arrShared.length === 0 && arrTrans.length > 0) {
-      arrShared = arrTrans;
-      arrTrans = [];
+    if (forTranslation) {
+      arr = Array.isArray(translationData) ? translationData : translationData != null ? [translationData] : [];
+      arrOther = Array.isArray(sharedData) ? sharedData : sharedData != null ? [sharedData] : [];
+    } else {
+      arr = Array.isArray(sharedData) ? sharedData : sharedData != null ? [sharedData] : [];
+      arrOther = Array.isArray(translationData) ? translationData : translationData != null ? [translationData] : [];
     }
 
-    return arrShared.map((item, i) => {
-      const transItem = arrTrans[i];
-      return rebuildWithTranslation(item, transItem, schema.items, forTranslation);
-    });
+    // Fallback: use "other" array if main array is empty
+    if (!forTranslation && arr.length === 0 && arrOther.length > 0) arr = arrOther;
+    if (forTranslation && arr.length === 0 && arrOther.length > 0) arr = arrOther;
+
+    return arr.map((item, i) =>
+      rebuildWithTranslation(forTranslation ? arrOther[i] : item, forTranslation ? item : arrOther[i], schema.items, forTranslation),
+    );
   }
 
   return {};
 }
 
-export function rebuild(data: any, schema: any): any {
-  if (!schema) {
-    return null;
-  }
-
-  if (schema.type === "object") {
-    if (Array.isArray(data)) {
-      return rebuild(data[0] ?? {}, schema);
-    }
-    return rebuildObject(data ?? {}, schema);
-  }
-
-  if (schema.type === "array") {
-    return rebuildArray(data, schema);
-  }
-
-  return castPrimitive(data, schema.type, schema.defaultValue);
-}
-
-function rebuildObject(data: any, schema: any) {
-  const output: any = {};
-
-  for (const key of Object.keys(schema.properties || {})) {
-    const fieldSchema = schema.properties[key];
-    const existing = data?.[key];
-
-    if (existing === undefined) {
-      output[key] = createDefault(fieldSchema);
-    } else {
-      output[key] = rebuild(existing, fieldSchema);
-    }
-  }
-
-  // If no properties and the original data was not an object, still return {}
-  return output;
-}
+// ----- Helper functions -----
 
 function isLocalizable(schema: any): boolean {
   if (!schema) return false;
-
   if (schema.localizable) return true;
-
   if (schema.type === "object" && schema.properties) {
     return Object.values(schema.properties).some(isLocalizable);
   }
-
   if (schema.type === "array" && schema.items) {
     return isLocalizable(schema.items);
   }
-
   return false;
-}
-
-function rebuildArray(data: any, schema: any) {
-  // If data is undefined/null -> default []
-  if (data === undefined || data === null) return [];
-
-  // If data is not an array -> wrap
-  if (!Array.isArray(data)) {
-    return [rebuild(data, schema.items)];
-  }
-
-  return data.map((it: any) => rebuild(it, schema.items));
 }
 
 export function castPrimitive(value: any, type: AttributeTypeEnum, defaultValue?: any) {
@@ -418,19 +368,8 @@ export function castPrimitive(value: any, type: AttributeTypeEnum, defaultValue?
       case "boolean":
         return Boolean(value);
     }
-  } catch (e) {
+  } catch {
     if (defaultValue !== undefined) return deepClone(defaultValue);
-    // fallback
     return null;
   }
-}
-
-function createDefault(schema: any) {
-  if (schema.defaultValue !== undefined) return deepClone(schema.defaultValue);
-
-  if (schema.type === "object") return rebuildObject({}, schema);
-  if (schema.type === "array") return [];
-
-  // primitive
-  return castPrimitive(undefined, schema.type);
 }

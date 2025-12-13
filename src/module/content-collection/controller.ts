@@ -5,17 +5,25 @@ import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { withDynamicFieldSettings } from "../../utils/helper.fieldSetting";
 import { AppContext } from "../../utils/helper.context";
+import { ObjectId } from "mongodb";
+import { getCurrentUserId } from "../../utils/helper.auth";
 
 const contentCollectionController = (context: AppContext) => {
   const router = Router();
+  const tenantService = context.diContainer!.get("TenantService");
   const contentCollectionService = context.diContainer!.get("ContentCollectionService");
 
   router.use(authenticate(context));
 
-  router.post("/create", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:tenantId/create", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      console.log("Creating content collection with data:", req.body);
-      const contentCollection = await contentCollectionService.create(req.body);
+      const { tenantId } = req.params;
+      const userId = getCurrentUserId(context);
+      const tenant = await tenantService.findOne({ _id: new ObjectId(tenantId), createdBy: userId });
+      if (!tenant) throw new NotFoundError("tenant not found");
+
+      console.log("Creating tenant with data:", req.body);
+      const contentCollection = await contentCollectionService.create(tenant, req.body);
       res.status(201).json(successResponse(contentCollection));
     } catch (err) {
       await cleanupUploadedFiles(req);

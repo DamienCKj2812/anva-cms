@@ -4,7 +4,7 @@ import { CreateContentTranslationData } from "../../content-translation/database
 export enum ContentStatusEnum {
   DRAFT = "draft",
   PUBLISHED = "published",
-  ARCHIVED = "archived",
+  ARCHIVED = "ajchived",
 }
 
 export interface Content {

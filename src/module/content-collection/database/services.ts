@@ -13,6 +13,7 @@ import ContentService from "../../content/database/services";
 import AttributeComponentService from "../../attribute-component/database/services";
 import { castPrimitive, rebuildWithTranslation } from "../../../utils/helper.ajv";
 import ContentTranslationService from "../../content-translation/database/services";
+import { Tenant } from "../../tenant/database/models";
 
 class ContentCollectionService extends BaseService {
   private db: Db;
@@ -44,11 +45,8 @@ class ContentCollectionService extends BaseService {
   }
 
   private async createValidation(data: CreateContentCollectionData): Promise<CreateContentCollectionData> {
-    const { tenantId, slug, displayName, type } = data;
+    const { slug, displayName, type } = data;
     const userId = getCurrentUserId(this.context);
-    if (!("tenantId" in data)) {
-      throw new ValidationError('"tenantId" field is required');
-    }
     if (!("slug" in data)) {
       throw new ValidationError('"slug" field is required');
     }
@@ -57,14 +55,6 @@ class ContentCollectionService extends BaseService {
     }
     if (!("type" in data)) {
       throw new ValidationError('"type" field is required');
-    }
-    validateObjectId(tenantId);
-    const tenant = await this.tenantService.getById(tenantId);
-    if (!tenant) {
-      throw new NotFoundError("Tenant not found");
-    }
-    if (!tenant.createdBy.equals(userId)) {
-      throw new ForbiddenError("You are not allowed to access this resources");
     }
     if (typeof slug !== "string" || !slug.trim()) {
       throw new ValidationError("slug must be a non-empty string");
@@ -89,14 +79,14 @@ class ContentCollectionService extends BaseService {
     return data;
   }
 
-  async create(data: CreateContentCollectionData): Promise<ContentCollection> {
-    const { tenantId, slug, displayName, type } = await this.createValidation(data);
+  async create(tenant: Tenant, data: CreateContentCollectionData): Promise<ContentCollection> {
+    const { slug, displayName, type } = await this.createValidation(data);
     const createdBy = getCurrentUserId(this.context);
 
     console.log("Creating :", slug);
     const newContentCollection: ContentCollection = {
       _id: new ObjectId(),
-      tenantId: new ObjectId(tenantId),
+      tenantId: tenant._id,
       slug: slug.trim(),
       displayName: displayName.trim(),
       type,

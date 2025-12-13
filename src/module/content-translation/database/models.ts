@@ -20,7 +20,6 @@ export interface FullContentTranslation extends ContentTranslation {
 }
 
 export interface CreateContentTranslationData {
-  tenantId: string;
   data: any;
   status: string;
 }

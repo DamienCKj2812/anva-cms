@@ -12,7 +12,7 @@ import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
-import ajv, { preValidateComponentPlaceholders, rebuild, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
+import ajv, { preValidateComponentPlaceholders, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
 import { ContentTranslation, CreateContentTranslationData } from "../../content-translation/database/models";
 import TenantLocaleService from "../../tenant-locale/database/services";
 
@@ -103,7 +103,6 @@ class ContentService extends BaseService {
       try {
         const contentTranslationDto: CreateContentTranslationData = {
           data: translation,
-          tenantId: contentCollection.tenantId.toString(),
           status: ContentStatusEnum.PUBLISHED,
         };
         const tenantLocale = await this.tenantLocaleService.findOne({ tenantId: contentCollection.tenantId, isDefault: true });

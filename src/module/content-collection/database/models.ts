@@ -25,7 +25,6 @@ export interface UpdateContentCollectionData {
 export interface CreateContentCollectionData {
   type: ContentCollectionTypeEnum;
   slug: string;
-  tenantId: string;
   name: string;
   displayName: string;
 }

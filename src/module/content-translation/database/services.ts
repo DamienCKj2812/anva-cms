@@ -6,7 +6,7 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { ContentTranslation, CreateContentTranslationData, FullContentTranslation, UpdateContentTranslationData } from "./models";
-import ajv, { preValidateComponentPlaceholders, rebuild, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
+import ajv, { preValidateComponentPlaceholders, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";

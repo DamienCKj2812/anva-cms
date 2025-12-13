@@ -17,22 +17,23 @@ const contentTranslationController = (context: AppContext) => {
 
   router.use(authenticate(context));
 
-  router.post("/:tenantLocaleId/:contentCollectionId/:contentId/create", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:tenantLocaleId/:contentId/create", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { tenantLocaleId, contentCollectionId, contentId } = req.params;
+      const { tenantLocaleId, contentId } = req.params;
 
-      if (!contentCollectionId) throw new BadRequestError('"contentCollectionId" field is required');
       if (!contentId) throw new BadRequestError('"contentId" field is required');
 
-      const [contentCollection, content, tenantLocale] = await Promise.all([
-        contentCollectionService.findOne({ _id: new ObjectId(contentCollectionId) }),
+      const [content, tenantLocale] = await Promise.all([
         contentService.findOne({ _id: new ObjectId(contentId) }),
         tenantLocaleService.findOne({ _id: new ObjectId(tenantLocaleId) }),
       ]);
 
-      if (!contentCollection) throw new NotFoundError("contentCollection not found");
       if (!content) throw new NotFoundError("content not found");
       if (!tenantLocale) throw new NotFoundError("tenantLocale not found");
+
+      const contentCollection = await contentCollectionService.findOne({ _id: content.contentCollectionId });
+      if (!contentCollection) throw new NotFoundError("contentCollection not found");
+
       const fullSchema = await attributeService.getValidationSchema(contentCollection);
 
       const contentTranslation = await contentTranslationService.create(req.body, contentCollection, content, tenantLocale, fullSchema);

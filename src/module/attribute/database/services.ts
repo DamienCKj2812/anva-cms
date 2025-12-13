@@ -23,7 +23,7 @@ import AttributeComponentService from "../../attribute-component/database/servic
 import { AttributeComponent } from "../../attribute-component/database/models";
 import ContentService from "../../content/database/services";
 import ContentTranslationService from "../../content-translation/database/services";
-import { splitSchemaByLocalizable } from "../../../utils/helper.ajv";
+import validation from "ajv/dist/vocabularies/validation";
 
 class AttributeService extends BaseService {
   private db: Db;
@@ -38,6 +38,7 @@ class AttributeService extends BaseService {
     "defaultValue",
     "enumValues",
     "validation",
+    "repeatable",
   ] as const);
   private static readonly ALLOWED_UPDATE_COMPONENT_FIELDS: ReadonlySet<keyof UpdateComponentAttributeDto> = new Set([
     "label",
@@ -86,7 +87,7 @@ class AttributeService extends BaseService {
     if (!/^[A-Za-z0-9]+$/.test(data.key)) {
       throw new ValidationError("key may only contain letters and numbers (no spaces or symbols)");
     }
-    let { key, label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
+    let { key, label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation, repeatable } = data;
     // --- VALIDATION ---
     if (!("key" in data)) {
       throw new ValidationError('"key" field is required');
@@ -148,6 +149,10 @@ class AttributeService extends BaseService {
       this.validateAttributeValidation(attributeType, validation, attributeFormat);
     }
 
+    if (repeatable !== undefined && attributeFormat != AttributeFormatEnum.MEDIA_URI) {
+      throw new ValidationError("only media uri can be repeatable");
+    }
+
     return data; // key is returned trimmed
   }
 
@@ -173,6 +178,7 @@ class AttributeService extends BaseService {
       enumValues: validatedData.enumValues,
       validation: validatedData.validation,
       localizable: validatedData.localizable,
+      repeatable: validatedData.repeatable,
       position: attributeCount,
       createdBy,
       createdAt: new Date(),
@@ -192,7 +198,7 @@ class AttributeService extends BaseService {
   }
 
   private async updatePrimitiveAttributeValidation(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<UpdatePrimitiveAttributeDTO> {
-    const { label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
+    const { label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation, repeatable } = data;
     if (attribute.attributeKind != AttributeKindEnum.PRIMITIVE) {
       throw new BadRequestError("only can modify the primitive attribute");
     }
@@ -204,7 +210,8 @@ class AttributeService extends BaseService {
       !("attributeFormat" in data) &&
       !("defaultValue" in data) &&
       !("enumValues" in data) &&
-      !("validation" in data)
+      !("validation" in data) &&
+      !("repeatable" in data)
     ) {
       throw new NotFoundError("No valid fields provided for update");
     }
@@ -218,7 +225,7 @@ class AttributeService extends BaseService {
       throw new ValidationError(`Attribute attributeType must be one of: ${Object.values(AttributeTypeEnum).join(", ")}`);
     }
 
-    if (localizable && typeof localizable !== "boolean") {
+    if (localizable !== undefined && typeof localizable !== "boolean") {
       throw new ValidationError("localizable must be a boolean");
     }
 
@@ -240,6 +247,10 @@ class AttributeService extends BaseService {
       }
       this.validateAttributeValidation(attributeType || attribute.attributeType, validation, attribute.attributeFormat);
       console.log("silently correct");
+    }
+
+    if (repeatable !== undefined && (attributeFormat || attribute.attributeFormat) != AttributeFormatEnum.MEDIA_URI) {
+      throw new ValidationError("only media uri can be repeatable");
     }
     return data;
   }
@@ -605,19 +616,32 @@ class AttributeService extends BaseService {
 
       // PRIMITIVE and COMPONENT_PRIMITIVE
       if (attr.attributeKind === AttributeKindEnum.PRIMITIVE || attr.attributeKind === AttributeKindEnum.COMPONENT_PRIMITIVE) {
-        finalSchema = {
+        const primitiveSchema: any = {
           type: attr.attributeType,
           format: attr.attributeFormat,
-          defaultValue: attr.defaultValue,
+          default: attr.defaultValue,
           enum: attr.enumValues,
           localizable: attr.localizable,
           ...this.buildValidationRules(attr.validation),
         };
 
+        // repeatable primitive (e.g. media gallery)
+        if (attr.repeatable && attr.attributeKind === AttributeKindEnum.PRIMITIVE && attr.attributeFormat === AttributeFormatEnum.MEDIA_URI) {
+          finalSchema = {
+            type: "array",
+            items: primitiveSchema,
+            minItems: 0,
+          };
+        } else {
+          finalSchema = primitiveSchema;
+        }
+
         schema.properties[attr.key] = finalSchema;
+
         if (attr.required && !schema.required.includes(attr.key)) {
           schema.required.push(attr.key);
         }
+
         continue;
       }
 

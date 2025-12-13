@@ -5,6 +5,7 @@ import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
 import { ObjectId } from "mongodb";
+import { getCurrentUserId } from "../../utils/helper.auth";
 
 const attributeComponentController = (context: AppContext) => {
   const router = Router();
@@ -65,6 +66,65 @@ const attributeComponentController = (context: AppContext) => {
         throw new NotFoundError("attribute component not found");
       }
       res.status(200).json(successResponse(attributeComponent));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = getCurrentUserId(context);
+      const { tenantId } = req.query as { tenantId?: string };
+      const filter: any = {
+        createdBy: new ObjectId(userId),
+      };
+      if (tenantId) {
+        filter.tenantId = new ObjectId(tenantId);
+      }
+      const attributeComponents = await attributeComponentService.findMany(filter);
+      res.status(200).json(successResponse(attributeComponents));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/:tenantId/get-by-category", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { tenantId } = req.params;
+
+      const attributeComponents = await attributeComponentService
+        .getCollection()
+        .aggregate([
+          {
+            $match: {
+              tenantId: new ObjectId(tenantId),
+            },
+          },
+          {
+            $sort: {
+              category: 1,
+              createdAt: 1,
+            },
+          },
+          {
+            $group: {
+              _id: "$category",
+              attributeComponents: {
+                $push: "$$ROOT",
+              },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              category: "$_id",
+              attributeComponents: 1,
+            },
+          },
+        ])
+        .toArray();
+
+      res.status(200).json(successResponse(attributeComponents));
     } catch (err) {
       next(err);
     }

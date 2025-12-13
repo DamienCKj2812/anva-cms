@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { errorResponse, successResponse } from "../../utils/helper.response";
-import { NotFoundError } from "../../utils/helper.errors";
+import { BadRequestError, NotFoundError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { withDynamicFieldSettings } from "../../utils/helper.fieldSetting";
@@ -12,6 +12,7 @@ const contentCollectionController = (context: AppContext) => {
   const router = Router();
   const tenantService = context.diContainer!.get("TenantService");
   const contentCollectionService = context.diContainer!.get("ContentCollectionService");
+  const attributeService = context.diContainer!.get("AttributeService");
 
   router.use(authenticate(context));
 
@@ -33,7 +34,15 @@ const contentCollectionController = (context: AppContext) => {
 
   router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const contentCollections = await contentCollectionService.getAll();
+      const userId = getCurrentUserId(context);
+      const { tenantId } = req.query as { tenantId?: string };
+      const filter: any = {
+        createdBy: new ObjectId(userId),
+      };
+      if (tenantId) {
+        filter.tenantId = new ObjectId(tenantId);
+      }
+      const contentCollections = await contentCollectionService.findMany(filter);
       res.status(200).json(successResponse(contentCollections));
     } catch (err) {
       next(err);
@@ -53,19 +62,31 @@ const contentCollectionController = (context: AppContext) => {
     }
   });
 
-  router.post(
-    "/:id/update",
-    ...withDynamicFieldSettings(contentCollectionService.collectionName, context),
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const updatedContentCollection = await contentCollectionService.update(req.params.id, req.body);
-        res.status(200).json(successResponse(updatedContentCollection));
-      } catch (err) {
-        await cleanupUploadedFiles(req);
-        next(err);
-      }
-    },
-  );
+  router.post("/:id/get-schema", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+
+      if (!id) throw new BadRequestError('"id" field is required');
+
+      const [contentCollection] = await Promise.all([contentCollectionService.findOne({ _id: new ObjectId(id) })]);
+
+      if (!contentCollection) throw new NotFoundError("contentCollection not found");
+      const schema = await attributeService.getValidationSchema(contentCollection);
+      res.status(200).json(successResponse(schema));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const updatedContentCollection = await contentCollectionService.update(req.params.id, req.body);
+      res.status(200).json(successResponse(updatedContentCollection));
+    } catch (err) {
+      await cleanupUploadedFiles(req);
+      next(err);
+    }
+  });
 
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {

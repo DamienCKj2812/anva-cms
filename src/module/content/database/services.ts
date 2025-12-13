@@ -134,14 +134,6 @@ class ContentService extends BaseService {
     return await this.collection.findOne({ _id: new ObjectId(id) });
   }
 
-  async getContentCount(createdBy: ObjectId): Promise<ContentCount[]> {
-    const counts = await this.collection
-      .aggregate([{ $match: { createdBy } }, { $group: { _id: "$contentCollectionId", count: { $sum: 1 } } }])
-      .toArray();
-
-    return counts as ContentCount[];
-  }
-
   async findOne(filter: Partial<Content>, options?: FindOptions<Content>): Promise<Content | null> {
     return await this.collection.findOne(filter, options);
   }

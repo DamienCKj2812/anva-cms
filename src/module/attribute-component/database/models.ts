@@ -23,3 +23,8 @@ export interface UpdateAttributeComponentDto {
   label?: string;
   category?: string;
 }
+
+export interface AttributeComponentGroup {
+  category: string;
+  attributeComponents: AttributeComponent[];
+}

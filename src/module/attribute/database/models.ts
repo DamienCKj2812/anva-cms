@@ -40,8 +40,7 @@ export interface Attribute {
   componentRefId?: ObjectId;
   // multiple component references (for DYNAMIC_ZONE)
   componentRefIds?: ObjectId[];
-  // only for component attribute
-  repeatable?: boolean;
+  // only for component attribute and some attribute that is allow for repeatable like media-uri
   attributeType?: AttributeTypeEnum;
   attributeFormat?: AttributeFormatEnum;
   required: boolean;
@@ -49,6 +48,7 @@ export interface Attribute {
   enumValues?: string[];
   validation?: ValidationRules;
   localizable?: boolean;
+  repeatable?: boolean;
   position: number;
   createdBy: ObjectId;
   createdAt: Date;
@@ -68,6 +68,7 @@ export interface CreatePrimitiveAttributeDTO extends CreateAttributeBaseDTO {
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
+  repeatable?: boolean;
 }
 
 // used when the user add a component as field, just a placeholder, hence no need to store the value
@@ -93,6 +94,7 @@ export interface UpdatePrimitiveAttributeDTO extends UpdateAttributeBaseDto {
   defaultValue?: any;
   enumValues?: string[];
   validation?: ValidationRules;
+  repeatable?: boolean;
 }
 
 export interface UpdateComponentAttributeDto extends UpdateAttributeBaseDto {

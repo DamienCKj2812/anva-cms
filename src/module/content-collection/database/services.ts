@@ -99,24 +99,6 @@ class ContentCollectionService extends BaseService {
     return newContentCollection;
   }
 
-  async getAll(): Promise<(ContentCollection & { contentCount: number })[]> {
-    const userId = getCurrentUserId(this.context);
-
-    const [contentCollections, contentCounts] = await Promise.all([
-      this.findMany({ createdBy: userId }),
-      this.contentService.getContentCount(userId),
-    ]);
-
-    const countMap = new Map<string, number>(contentCounts.map((c) => [c._id.toString(), c.count]));
-
-    const merged = contentCollections.map((c) => ({
-      ...c,
-      contentCount: countMap.get(c._id!.toString()) ?? 0,
-    }));
-
-    return merged;
-  }
-
   async getById(id: string): Promise<ContentCollection | null> {
     validateObjectId(id);
     return await this.collection.findOne({ _id: new ObjectId(id) });
@@ -250,14 +232,13 @@ class ContentCollectionService extends BaseService {
       if (attribute.attributeKind === AttributeKindEnum.PRIMITIVE) {
         if (attribute.attributeFormat) prop.format = attribute.attributeFormat;
         if (attribute.enumValues) prop.enum = attribute.enumValues;
-
         if (attribute.defaultValue !== undefined && attribute.attributeType !== undefined) {
           prop.default = castPrimitive(attribute.defaultValue, attribute.attributeType);
         }
-
         if (attribute.validation) {
           Object.assign(prop, attribute.validation);
         }
+        if (attribute.repeatable) prop.repeatable = attribute.repeatable ?? false;
 
         prop.localizable = attribute.localizable;
       } else if (attribute.attributeKind === AttributeKindEnum.COMPONENT) {

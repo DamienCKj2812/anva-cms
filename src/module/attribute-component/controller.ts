@@ -6,6 +6,7 @@ import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
 import { ObjectId } from "mongodb";
 import { getCurrentUserId } from "../../utils/helper.auth";
+import { AttributeComponentGroup } from "./database/models";
 
 const attributeComponentController = (context: AppContext) => {
   const router = Router();
@@ -94,23 +95,39 @@ const attributeComponentController = (context: AppContext) => {
 
       const attributeComponents = await attributeComponentService
         .getCollection()
-        .aggregate([
+        .aggregate<AttributeComponentGroup[]>([
           {
-            $match: {
-              tenantId: new ObjectId(tenantId),
+            $match: { tenantId: new ObjectId(tenantId) },
+          },
+          {
+            $lookup: {
+              from: "attributes",
+              localField: "attributes",
+              foreignField: "_id",
+              as: "resolvedAttributes",
             },
           },
           {
-            $sort: {
-              category: 1,
-              createdAt: 1,
-            },
+            $sort: { category: 1, createdAt: 1 },
           },
           {
             $group: {
               _id: "$category",
-              attributeComponents: {
-                $push: "$$ROOT",
+              attributeComponents: { $push: "$$ROOT" },
+            },
+          },
+          {
+            $addFields: {
+              resolvedAttributes: {
+                $setUnion: [
+                  {
+                    $reduce: {
+                      input: "$attributeComponents",
+                      initialValue: [],
+                      in: { $concatArrays: ["$$value", "$$this.resolvedAttributes"] },
+                    },
+                  },
+                ],
               },
             },
           },
@@ -118,7 +135,26 @@ const attributeComponentController = (context: AppContext) => {
             $project: {
               _id: 0,
               category: "$_id",
-              attributeComponents: 1,
+              attributeComponents: {
+                $map: {
+                  input: "$attributeComponents",
+                  as: "ac",
+                  in: {
+                    _id: "$$ac._id",
+                    tenantId: "$$ac.tenantId",
+                    key: "$$ac.key",
+                    label: "$$ac.label",
+                    category: "$$ac.category",
+                    schema: "$$ac.schema",
+                    attributes: "$$ac.attributes",
+                    createdBy: "$$ac.createdBy",
+                    createdAt: "$$ac.createdAt",
+                    updatedAt: "$$ac.updatedAt",
+                    // omit inner resolvedAttributes
+                  },
+                },
+              },
+              resolvedAttributes: 1,
             },
           },
         ])

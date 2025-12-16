@@ -230,6 +230,7 @@ class ContentCollectionService extends BaseService {
       };
 
       if (attribute.attributeKind === AttributeKindEnum.PRIMITIVE) {
+        prop.attributeId = attribute._id;
         if (attribute.attributeFormat) prop.format = attribute.attributeFormat;
         if (attribute.enumValues) prop.enum = attribute.enumValues;
         if (attribute.defaultValue !== undefined && attribute.attributeType !== undefined) {
@@ -247,6 +248,7 @@ class ContentCollectionService extends BaseService {
         }
 
         // Store reference and repeatable info only
+        prop.attributeId = attribute._id;
         prop.componentRefId = attribute.componentRefId;
         prop.repeatable = attribute.repeatable ?? false;
         prop.type = "object"; // always store as object in metadata

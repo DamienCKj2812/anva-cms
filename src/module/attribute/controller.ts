@@ -45,19 +45,20 @@ const attributeController = (context: AppContext) => {
     }
   });
 
-  router.post("/:collectionId/get-by-collection", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const collectionId = req.params.collectionId;
-      validateObjectId(collectionId);
-      const contentCollection = await contentCollectionService.findOne({ _id: new ObjectId(collectionId) });
-      if (!contentCollection) {
-        throw new NotFoundError("Content collection not found");
-      }
       const userId = getCurrentUserId(context);
-      if (!contentCollection.createdBy.equals(userId)) {
-        throw new ForbiddenError("You are not allowed to access this resources");
+      const { tenantId, contentCollectionId } = req.query as { tenantId?: string; contentCollectionId?: string };
+      const filter: any = {
+        createdBy: new ObjectId(userId),
+      };
+      if (tenantId) {
+        filter.tenantId = new ObjectId(tenantId);
       }
-      const attributes = await attributeService.findMany({ contentCollectionId: new ObjectId(collectionId) }, { sort: { position: 1 } });
+      if (contentCollectionId) {
+        filter.contentCollectionId = new ObjectId(contentCollectionId);
+      }
+      const attributes = await attributeService.findMany(filter, { sort: { position: 1 } });
       res.status(200).json(successResponse(attributes));
     } catch (err) {
       next(err);

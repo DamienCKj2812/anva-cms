@@ -35,6 +35,7 @@ class AttributeComponentService extends BaseService {
     "defaultValue",
     "enumValues",
     "validation",
+    "repeatable",
   ] as const);
   private static readonly ALLOWED_UPDATE_VALIDATION_FIELDS: ReadonlySet<keyof ValidationRules> = new Set([
     "minLength",
@@ -224,7 +225,7 @@ class AttributeComponentService extends BaseService {
     if (!/^[A-Za-z0-9]+$/.test(data.key)) {
       throw new ValidationError("key may only contain letters and numbers (no spaces or symbols)");
     }
-    const { key, label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
+    const { key, label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation, repeatable } = data;
     // --- VALIDATION ---
     if (!("key" in data)) {
       throw new ValidationError('"key" field is required');
@@ -286,6 +287,9 @@ class AttributeComponentService extends BaseService {
       this.attributeService.validateAttributeValidation(attributeType, validation, attributeFormat);
     }
 
+    if (repeatable !== undefined && attributeFormat != AttributeFormatEnum.MEDIA_URI) {
+      throw new ValidationError("only media uri can be repeatable");
+    }
     return data; // key is returned trimmed
   }
 
@@ -307,6 +311,7 @@ class AttributeComponentService extends BaseService {
       enumValues: validatedData.enumValues,
       validation: validatedData.validation,
       localizable: validatedData.localizable,
+      repeatable: validatedData.repeatable,
       position: attributeComponent.attributes.length,
       createdBy,
       createdAt: new Date(),
@@ -329,7 +334,7 @@ class AttributeComponentService extends BaseService {
   }
 
   private async updateAttributeValidation(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<UpdatePrimitiveAttributeDTO> {
-    const { label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation } = data;
+    const { label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation, repeatable } = data;
     if (attribute.attributeKind != AttributeKindEnum.COMPONENT_PRIMITIVE) {
       throw new BadRequestError("only can modify the component primitive attribute");
     }
@@ -341,7 +346,8 @@ class AttributeComponentService extends BaseService {
       !("attributeFormat" in data) &&
       !("defaultValue" in data) &&
       !("enumValues" in data) &&
-      !("validation" in data)
+      !("validation" in data) &&
+      !("repeatable" in data)
     ) {
       throw new NotFoundError("No valid fields provided for update");
     }
@@ -377,6 +383,10 @@ class AttributeComponentService extends BaseService {
       }
       this.attributeService.validateAttributeValidation(attributeType || attribute.attributeType, validation, attribute.attributeFormat);
       console.log("silently correct");
+    }
+
+    if (repeatable !== undefined && (attributeFormat || attribute.attributeFormat) != AttributeFormatEnum.MEDIA_URI) {
+      throw new ValidationError("only media uri can be repeatable");
     }
     return data;
   }
@@ -490,6 +500,7 @@ class AttributeComponentService extends BaseService {
 
       const property: any = {
         type: attribute.attributeType,
+        attributeId: attribute._id,
       };
 
       // Add standard primitive properties

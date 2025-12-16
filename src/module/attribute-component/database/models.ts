@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import { Attribute } from "../../attribute/database/models";
 
 export interface AttributeComponent {
   _id: ObjectId;
@@ -27,4 +28,5 @@ export interface UpdateAttributeComponentDto {
 export interface AttributeComponentGroup {
   category: string;
   attributeComponents: AttributeComponent[];
+  resolvedAttributes: Attribute[];
 }

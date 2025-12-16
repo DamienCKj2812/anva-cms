@@ -199,6 +199,7 @@ class AttributeService extends BaseService {
 
   private async updatePrimitiveAttributeValidation(attribute: Attribute, data: UpdatePrimitiveAttributeDTO): Promise<UpdatePrimitiveAttributeDTO> {
     const { label, required, attributeType, localizable, attributeFormat, defaultValue, enumValues, validation, repeatable } = data;
+    console.log({ data });
     if (attribute.attributeKind != AttributeKindEnum.PRIMITIVE) {
       throw new BadRequestError("only can modify the primitive attribute");
     }
@@ -590,7 +591,7 @@ class AttributeService extends BaseService {
     schema.additionalProperties ??= false;
 
     const attrs = await this.collection
-      .aggregate([
+      .aggregate<Attribute & { component?: AttributeComponent }>([
         {
           $match: { contentCollectionId: new ObjectId(contentCollection._id) },
         },
@@ -622,6 +623,7 @@ class AttributeService extends BaseService {
           default: attr.defaultValue,
           enum: attr.enumValues,
           localizable: attr.localizable,
+          attributeId: attr._id,
           ...this.buildValidationRules(attr.validation),
         };
 
@@ -657,11 +659,19 @@ class AttributeService extends BaseService {
         if (attr.repeatable) {
           finalSchema = {
             type: "array",
-            items: componentSchema,
+            attributeId: attr._id,
+            componentRefId: attr.componentRefId,
+            items: {
+              ...componentSchema,
+            },
             minItems: 0,
           };
         } else {
-          finalSchema = componentSchema;
+          finalSchema = {
+            ...componentSchema,
+            attributeId: attr._id,
+            componentRefId: attr.componentRefId,
+          };
         }
 
         schema.properties[attr.key] = finalSchema;

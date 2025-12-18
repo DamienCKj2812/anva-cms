@@ -580,7 +580,7 @@ class AttributeService extends BaseService {
 
   async getValidationSchema(contentCollection: ContentCollection): Promise<any> {
     if (!contentCollection.schema) {
-      throw new Error("Content collection has no schema");
+      return {};
     }
 
     const schema = JSON.parse(JSON.stringify(contentCollection.schema));

@@ -6,7 +6,12 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { ContentTranslation, CreateContentTranslationData, FullContentTranslation, UpdateContentTranslationData } from "./models";
-import ajv, { preValidateComponentPlaceholders, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
+import ajv, {
+  filterDataBySchema,
+  preValidateComponentPlaceholders,
+  separateTranslatableFields,
+  splitSchemaByLocalizable,
+} from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
@@ -58,9 +63,10 @@ class ContentTranslationService extends BaseService {
     if (!fullSchema) throw new ValidationError("Content collection schema is missing");
 
     const { localizableSchema } = splitSchemaByLocalizable(fullSchema);
-    console.log("creating translation");
-    console.dir({ data }, { depth: null });
-    console.dir({ localizableSchema }, { depth: null });
+    const filteredData = filterDataBySchema(fullSchema, data, true);
+    createData.data = filteredData;
+
+    console.log(filteredData);
 
     try {
       preValidateComponentPlaceholders(localizableSchema);
@@ -75,7 +81,7 @@ class ContentTranslationService extends BaseService {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
     }
 
-    if (!validate(data)) {
+    if (!validate(filteredData)) {
       const errorText = ajv.errorsText(validate.errors, { separator: ", " });
       throw new ValidationError(`Data validation failed: ${errorText}`);
     }
@@ -193,6 +199,9 @@ class ContentTranslationService extends BaseService {
 
       // Filter schema to only localizable fields
       const { localizableSchema } = splitSchemaByLocalizable(fullSchema);
+      const filteredData = filterDataBySchema(fullSchema, data, true);
+      updateData.data = filteredData;
+      console.log(filteredData);
 
       // Validate against filtered schema
       try {
@@ -203,7 +212,7 @@ class ContentTranslationService extends BaseService {
 
       let validate: ValidateFunction;
       try {
-        validate = ajv.compile(localizableSchema);
+        validate = ajv.compile(filteredData);
       } catch (err) {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }

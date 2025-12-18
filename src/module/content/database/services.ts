@@ -12,7 +12,12 @@ import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
-import ajv, { preValidateComponentPlaceholders, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
+import ajv, {
+  filterDataBySchema,
+  preValidateComponentPlaceholders,
+  separateTranslatableFields,
+  splitSchemaByLocalizable,
+} from "../../../utils/helper.ajv";
 import { ContentTranslation, CreateContentTranslationData } from "../../content-translation/database/models";
 import TenantLocaleService from "../../tenant-locale/database/services";
 
@@ -154,6 +159,9 @@ class ContentService extends BaseService {
 
       // Filter schema to only non-localizable fields (shared)
       const { sharedSchema } = splitSchemaByLocalizable(fullSchema);
+      // !Important
+      const filteredData = filterDataBySchema(sharedSchema, data, false);
+      updateData.data = filteredData;
 
       try {
         preValidateComponentPlaceholders(sharedSchema);
@@ -168,7 +176,7 @@ class ContentService extends BaseService {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
 
-      if (!validate(data)) {
+      if (!validate(filteredData)) {
         const errorText = ajv.errorsText(validate.errors, { separator: ", " });
         throw new ValidationError(`Data validation failed: ${errorText}`);
       }

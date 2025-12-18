@@ -34,6 +34,47 @@ ajv.addFormat("media-uri", {
 
 export default ajv;
 
+export function filterDataBySchema(
+  schema: any,
+  data: Record<string, any>,
+  localizable?: boolean, // undefined = include all, true = only localizable, false = only non-localizable
+): Record<string, any> {
+  if (!schema?.properties || typeof data !== "object" || data === null) return {};
+
+  const result: Record<string, any> = {};
+
+  for (const key of Object.keys(schema.properties)) {
+    const fieldSchema = schema.properties[key];
+    const value = data[key];
+
+    if (value === undefined) continue; // skip if user didn't provide
+
+    // Only skip primitive fields that don't match localizable filter
+    const isPrimitive = fieldSchema.type !== "object" && fieldSchema.type !== "array";
+
+    if (isPrimitive && localizable !== undefined && fieldSchema.localizable !== localizable) continue;
+
+    if (fieldSchema.type === "object" && fieldSchema.properties) {
+      result[key] = filterDataBySchema(fieldSchema, value, localizable);
+    } else if (fieldSchema.type === "array" && fieldSchema.items) {
+      if (!Array.isArray(value)) continue; // skip invalid type
+
+      if (fieldSchema.items.type === "object") {
+        result[key] = value.map((v: any) => filterDataBySchema(fieldSchema.items, v, localizable));
+      } else {
+        // primitive array
+        result[key] = value;
+      }
+    }
+    // Primitive field
+    else {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
 export function preValidateComponentPlaceholders(schema: any, path = "data") {
   if (!schema || typeof schema !== "object") {
     throw new ValidationError(`Invalid schema at "${path}". Expected an object, but received ${typeof schema}`);

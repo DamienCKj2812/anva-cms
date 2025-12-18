@@ -32,3 +32,7 @@ export interface UpdateContentData {
   status?: string;
   data?: any;
 }
+
+export interface FullContent extends Content {
+  fullData: any;
+}

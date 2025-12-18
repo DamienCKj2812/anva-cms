@@ -16,67 +16,91 @@ const publicContentController = (context: AppContext) => {
     try {
       const { slug } = req.params;
       const { locale } = req.query as { locale?: string };
-
+      
       const contentCollection = await contentCollectionService.findOne({ slug });
       if (!contentCollection) {
         throw new NotFoundError("Content collection not found. Check the slug.");
       }
 
+      // Check if any attributes are localizable
+      const hasLocalizableAttributes = await attributeService.getCollection().findOne({ 
+        contentCollectionId: contentCollection._id,
+        localizable : true
+      });
+  
       if (contentCollection.type === ContentCollectionTypeEnum.SINGLE) {
-        const translationQuery: any = {};
-
-        translationQuery.contentCollectionId = contentCollection._id;
-        if (locale) translationQuery.locale = locale;
-        else translationQuery.isDefault = true;
-
-        const [content, contentTranslation, fullSchema] = await Promise.all([
-          contentService.findOne({ contentCollectionId: contentCollection._id }),
-          contentTranslationService.findOne(translationQuery),
-          attributeService.getValidationSchema(contentCollection),
-        ]);
+        const content = await contentService.findOne({ 
+          contentCollectionId: contentCollection._id 
+        });
+        
         if (!content) {
           throw new NotFoundError("content not found");
         }
+
+        // If no localizable attributes, return content data directly
+        if (!hasLocalizableAttributes) {
+          return res.json(successResponse(content.data));
+        }
+
+        // If has localizable attributes, fetch and merge translation
+        const fullSchema = await attributeService.getValidationSchema(contentCollection);
+        const translationQuery: any = {
+          contentCollectionId: contentCollection._id
+        };
+        if (locale) translationQuery.locale = locale;
+        else translationQuery.isDefault = true;
+
+        const contentTranslation = await contentTranslationService.findOne(translationQuery);
+        
         if (!contentTranslation) {
           throw new NotFoundError("contentTranslation not found");
         }
 
-        console.dir({ contentData: content.data }, { depth: null, colors: true });
-        console.dir({ contentTranslationData: contentTranslation.data }, { depth: null, colors: true });
-        console.dir({ fullSchema }, { depth: null, colors: true });
-        const mergedData = await mergeTranslatableFields(content.data, contentTranslation.data, fullSchema);
-        console.dir({ mergedData }, { depth: null, colors: true });
+        const mergedData = await mergeTranslatableFields(
+          content.data, 
+          contentTranslation.data, 
+          fullSchema
+        );
         return res.json(successResponse(mergedData));
+        
       } else if (contentCollection.type === ContentCollectionTypeEnum.COLLECTION) {
-        const translationQuery: any = {};
-        translationQuery.contentCollectionId = contentCollection._id;
+        const content = await contentService.findMany(
+          { contentCollectionId: contentCollection._id }, 
+          { sort: { _id: 1 } }
+        );
+
+        // If no localizable attributes, return content data directly
+        if (!hasLocalizableAttributes) {
+          return res.json(successResponse(content.map((c) => c.data)));
+        }
+
+        // If has localizable attributes, fetch and merge translations
+        const fullSchemaObj = await attributeService.getValidationSchema(contentCollection);
+        const translationQuery: any = {
+          contentCollectionId: contentCollection._id
+        };
         if (locale) translationQuery.locale = locale;
         else translationQuery.isDefault = true;
 
-        const [content, contentTranslation, fullSchemaObj] = await Promise.all([
-          contentService.findMany({ contentCollectionId: contentCollection._id }, { sort: { _id: 1 } }),
-          contentTranslationService.findMany(translationQuery, { sort: { contentId: 1 } }),
-          attributeService.getValidationSchema(contentCollection),
-        ]);
+        const contentTranslation = await contentTranslationService.findMany(
+          translationQuery, 
+          { sort: { contentId: 1 } }
+        );
 
-        // Wrap schema in array
         const fullSchema = {
           type: "array",
           items: fullSchemaObj,
         };
-
-        console.dir({ contentData: content.map((c) => c.data) }, { depth: null, colors: true });
-        console.dir({ contentTranslationData: contentTranslation.map((c) => c.data) }, { depth: null, colors: true });
-        console.dir({ fullSchema }, { depth: null, colors: true });
 
         const mergedData = await mergeTranslatableFields(
           content.map((c) => c.data),
           contentTranslation.map((c) => c.data),
           fullSchema,
         );
+        
         return res.json(successResponse(mergedData));
       }
-
+      
       return res.json({ message: "Not a SINGLE content collection type" });
     } catch (err) {
       next(err);

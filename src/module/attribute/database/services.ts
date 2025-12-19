@@ -247,7 +247,6 @@ class AttributeService extends BaseService {
         throw new ValidationError("attribute is missing attributeType");
       }
       this.validateAttributeValidation(attributeType || attribute.attributeType, validation, attribute.attributeFormat);
-      console.log("silently correct");
     }
 
     if (repeatable !== undefined && (attributeFormat || attribute.attributeFormat) != AttributeFormatEnum.MEDIA_URI) {
@@ -345,7 +344,6 @@ class AttributeService extends BaseService {
       componentRefId: attributeComponent._id,
       repeatable: validatedData.repeatable,
       required: validatedData.required,
-      localizable: true,
       position: attributeCount,
       createdBy,
       createdAt: new Date(),
@@ -681,7 +679,6 @@ class AttributeService extends BaseService {
         continue;
       }
     }
-    console.dir({ schema }, { depth: null });
 
     return schema;
   }

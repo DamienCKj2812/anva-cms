@@ -280,8 +280,6 @@ class ContentCollectionService extends BaseService {
       contentCollectionId: contentCollection._id,
     });
 
-    console.dir({ fullSchema }, { depth: null });
-
     while (await contentCursor.hasNext()) {
       const contentDoc = await contentCursor.next();
       if (!contentDoc) continue;
@@ -291,7 +289,6 @@ class ContentCollectionService extends BaseService {
         contentId: contentDoc._id,
         isDefault: true,
       });
-      console.log({ defaultTranslationDoc: defaultTranslationDoc?.data });
 
       const rebuiltSharedData = rebuildWithTranslation(
         contentDoc.data ?? {},
@@ -299,9 +296,6 @@ class ContentCollectionService extends BaseService {
         fullSchema,
         false, // shared mode
       );
-
-      console.log({ originalSharedDoc: contentDoc.data });
-      console.log({ rebuiltSharedData });
 
       await this.contentService
         .getCollection()

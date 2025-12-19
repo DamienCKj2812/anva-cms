@@ -34,47 +34,6 @@ ajv.addFormat("media-uri", {
 
 export default ajv;
 
-export function filterDataBySchema(
-  schema: any,
-  data: Record<string, any>,
-  localizable?: boolean, // undefined = include all, true = only localizable, false = only non-localizable
-): Record<string, any> {
-  if (!schema?.properties || typeof data !== "object" || data === null) return {};
-
-  const result: Record<string, any> = {};
-
-  for (const key of Object.keys(schema.properties)) {
-    const fieldSchema = schema.properties[key];
-    const value = data[key];
-
-    if (value === undefined) continue; // skip if user didn't provide
-
-    // Only skip primitive fields that don't match localizable filter
-    const isPrimitive = fieldSchema.type !== "object" && fieldSchema.type !== "array";
-
-    if (isPrimitive && localizable !== undefined && fieldSchema.localizable !== localizable) continue;
-
-    if (fieldSchema.type === "object" && fieldSchema.properties) {
-      result[key] = filterDataBySchema(fieldSchema, value, localizable);
-    } else if (fieldSchema.type === "array" && fieldSchema.items) {
-      if (!Array.isArray(value)) continue; // skip invalid type
-
-      if (fieldSchema.items.type === "object") {
-        result[key] = value.map((v: any) => filterDataBySchema(fieldSchema.items, v, localizable));
-      } else {
-        // primitive array
-        result[key] = value;
-      }
-    }
-    // Primitive field
-    else {
-      result[key] = value;
-    }
-  }
-
-  return result;
-}
-
 export function preValidateComponentPlaceholders(schema: any, path = "data") {
   if (!schema || typeof schema !== "object") {
     throw new ValidationError(`Invalid schema at "${path}". Expected an object, but received ${typeof schema}`);
@@ -168,70 +127,73 @@ export function splitSchemaByLocalizable(schema: any): {
 
 // Need to sort the shared and translation correctly by contentId
 export function mergeTranslatableFields(shared: any, translation: any, schema: any): any {
-  if (!schema) return shared ?? translation ?? null;
+  if (!schema) return translation ?? shared ?? null;
 
-  // ARRAY CASE (index-based merge)
+  // HELPER: Determine if an object is effectively "empty"
+  const isEmpty = (val: any) =>
+    val === null || val === undefined || (typeof val === "object" && !Array.isArray(val) && Object.keys(val).length === 0);
+
+  // ARRAY CASE
   if (schema.type === "array" && schema.items) {
     const sharedArr = Array.isArray(shared) ? shared : [];
     const transArr = Array.isArray(translation) ? translation : [];
 
     const maxLen = Math.max(sharedArr.length, transArr.length);
-
     const result: any[] = [];
-    for (let i = 0; i < maxLen; i++) {
-      const sItem = sharedArr[i] ?? null;
-      const tItem = transArr[i] ?? null;
 
-      const merged = mergeTranslatableFields(sItem, tItem, schema.items);
-      result.push(merged);
+    for (let i = 0; i < maxLen; i++) {
+      const merged = mergeTranslatableFields(sharedArr[i], transArr[i], schema.items);
+      if (merged !== undefined && merged !== null) result.push(merged);
     }
 
-    return result;
+    // Always return at least an empty array if schema is array
+    return result.length > 0 ? result : [];
   }
 
   // OBJECT CASE
+  if (schema.type === "object" && schema.properties) {
+    const result: any = {};
+    const keys = Object.keys(schema.properties);
+
+    for (const key of keys) {
+      const merged = mergeTranslatableFields(shared?.[key], translation?.[key], schema.properties[key]);
+
+      // Include merged even if it's an empty array or empty object
+      if (merged !== undefined && merged !== null) {
+        result[key] = merged;
+      }
+    }
+
+    // Return result, even if some keys are empty arrays or empty objects
+    return Object.keys(result).length > 0 ? result : {};
+  }
+
+  // PRIMITIVE CASE
+  if (schema.localizable) {
+    return translation !== undefined ? translation : null;
+  }
+
+  return shared !== undefined ? shared : null;
+}
+
+export function mergeTranslatableFieldTest(shared: any, translation: any, schema: any): any {
+  if (!schema) return translation ?? shared ?? null;
+
   if (schema.type === "object" && schema.properties) {
     const result: any = {};
 
     for (const key of Object.keys(schema.properties)) {
       const fieldSchema = schema.properties[key];
 
-      const sValue = shared?.[key];
-      const tValue = translation?.[key];
+      const merged = mergeTranslatableFields(shared?.[key], translation?.[key], fieldSchema);
 
-      // nested array or object → recurse
-      if (fieldSchema.type === "array" || fieldSchema.type === "object") {
-        const merged = mergeTranslatableFields(sValue, tValue, fieldSchema);
-
-        if (merged !== null && (typeof merged !== "object" || Object.keys(merged).length > 0)) {
-          result[key] = merged;
-        }
-        continue;
-      }
-
-      // primitive case
-      if (fieldSchema.localizable) {
-        if (tValue !== undefined && tValue !== null) {
-          result[key] = tValue;
-        }
-      } else {
-        if (sValue !== undefined && sValue !== null) {
-          result[key] = sValue;
-        }
+      if (merged !== null && merged !== undefined) {
+        result[key] = merged;
       }
     }
 
     return Object.keys(result).length > 0 ? result : null;
   }
-
-  //
-  // PRIMITIVE CASE
-  //
-  if (schema.localizable) {
-    return translation ?? null;
-  }
-
-  return shared ?? null;
 }
 
 /**

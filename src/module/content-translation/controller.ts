@@ -81,10 +81,29 @@ const contentTranslationController = (context: AppContext) => {
     }
   });
 
-  router.post("/:id/get", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/get", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const contentTranslation = await contentTranslationService.getById(req.params.id);
-      res.status(200).json(successResponse(contentTranslation));
+      const userId = getCurrentUserId(context);
+      const { contentCollectionId, tenantLocaleId, contentId } = req.query as {
+        contentCollectionId?: string;
+        tenantLocaleId?: string;
+        contentId?: string;
+      };
+      const filter: any = {
+        createdBy: new ObjectId(userId),
+      };
+      if (contentCollectionId) {
+        filter.contentCollectionId = new ObjectId(contentCollectionId);
+      }
+      if (tenantLocaleId) {
+        filter.tenantLocaleId = new ObjectId(tenantLocaleId);
+      }
+      if (contentId) {
+        filter.contentId = new ObjectId(contentId);
+      }
+      filter.createdBy = userId ? new ObjectId(userId) : null;
+      const contents = await contentTranslationService.findMany(filter);
+      res.status(200).json(successResponse(contents));
     } catch (err) {
       next(err);
     }
@@ -93,6 +112,7 @@ const contentTranslationController = (context: AppContext) => {
   router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;
+      console.log({ id });
       const contentTranslation = await contentTranslationService.findOne({ _id: new ObjectId(id) });
       if (!contentTranslation) throw new NotFoundError("contentTranslation not found");
       const [contentCollection, content] = await Promise.all([

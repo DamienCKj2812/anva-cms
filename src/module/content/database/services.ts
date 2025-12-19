@@ -12,12 +12,7 @@ import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
-import ajv, {
-  filterDataBySchema,
-  preValidateComponentPlaceholders,
-  separateTranslatableFields,
-  splitSchemaByLocalizable,
-} from "../../../utils/helper.ajv";
+import ajv, { preValidateComponentPlaceholders, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
 import { ContentTranslation, CreateContentTranslationData } from "../../content-translation/database/models";
 import TenantLocaleService from "../../tenant-locale/database/services";
 
@@ -160,8 +155,8 @@ class ContentService extends BaseService {
       // Filter schema to only non-localizable fields (shared)
       const { sharedSchema } = splitSchemaByLocalizable(fullSchema);
       // !Important
-      const filteredData = filterDataBySchema(sharedSchema, data, false);
-      updateData.data = filteredData;
+      const { shared } = separateTranslatableFields(data, fullSchema);
+      updateData.data = shared;
 
       try {
         preValidateComponentPlaceholders(sharedSchema);
@@ -176,7 +171,7 @@ class ContentService extends BaseService {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
 
-      if (!validate(filteredData)) {
+      if (!validate(shared)) {
         const errorText = ajv.errorsText(validate.errors, { separator: ", " });
         throw new ValidationError(`Data validation failed: ${errorText}`);
       }
@@ -194,13 +189,9 @@ class ContentService extends BaseService {
 
     const validatedData = await this.updateValidation(content, filteredUpdateData, fullSchema);
 
-    // Inject contentId into translatable fields (for consistency)
-    const { shared, translation } = separateTranslatableFields(validatedData.data, fullSchema);
-
     const updatingFields: Partial<Content> = {
       ...validatedData,
       status: validatedData.status as ContentStatusEnum,
-      data: shared,
     };
 
     const updatedContent = await this.collection.findOneAndUpdate(

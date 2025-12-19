@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { successResponse } from "../../utils/helper.response";
+import { errorResponse, successResponse } from "../../utils/helper.response";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
@@ -14,6 +14,7 @@ const contentController = (context: AppContext) => {
   const contentService = context.diContainer!.get("ContentService");
   const contentTranslationService = context.diContainer!.get("ContentTranslationService");
   const contentCollectionService = context.diContainer!.get("ContentCollectionService");
+  const tenantLocaleService = context.diContainer!.get("TenantLocaleService");
   const attributeService = context.diContainer!.get("AttributeService");
 
   router.use(authenticate(context));
@@ -42,55 +43,72 @@ const contentController = (context: AppContext) => {
     }
   });
 
-  router.post("/:contentCollectionId/get-all-with-translation", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:contentCollectionId/get-all-with-translation", async (req, res, next) => {
     try {
       const { contentCollectionId } = req.params;
       const { locale, contentId } = req.query as { locale?: string; contentId?: string };
 
       const collectionObjectId = new ObjectId(contentCollectionId);
 
+      // 1. Get content collection
       const contentCollection = await contentCollectionService.findOne({ _id: collectionObjectId });
-      if (!contentCollection) {
-        throw new NotFoundError("Content collection not found.");
-      }
+      if (!contentCollection) return res.json(successResponse([]));
 
+      // 2. Resolve locale
+      const defaultLocale = await tenantLocaleService.findOne({ isDefault: true });
+      const requestedLocale = locale ?? defaultLocale?.locale;
+      if (!requestedLocale) return res.json(successResponse([]));
+
+      const tenantLocaleExists = await tenantLocaleService.findOne({ locale: requestedLocale });
+      if (!tenantLocaleExists) return res.json(successResponse([]));
+
+      // 3. Fetch content
       const matchContentQuery: any = { contentCollectionId: collectionObjectId };
       if (contentId) matchContentQuery._id = new ObjectId(contentId);
 
-      const matchTranslationQuery: any = { contentCollectionId: collectionObjectId };
-      if (contentId) matchTranslationQuery.contentId = new ObjectId(contentId);
-      if (locale) matchTranslationQuery.locale = locale;
-      else matchTranslationQuery.isDefault = true;
-
-      // Fetch content
       const content: Content[] =
         contentCollection.type === ContentCollectionTypeEnum.SINGLE
-          ? [(await contentService.findOne(matchContentQuery)) as Content]
+          ? ([await contentService.findOne(matchContentQuery)].filter(Boolean) as Content[])
           : ((await contentService.findMany(matchContentQuery, { sort: { _id: 1 } })) as Content[]);
 
-      if (!content || content.length === 0) throw new NotFoundError("Content not found");
+      if (!content.length) return res.json(successResponse([]));
 
-      // Fetch translations
-      const contentTranslation =
+      // 4. Fetch translations
+      const buildTranslationQuery = (locale: string) => {
+        const q: any = { contentCollectionId: collectionObjectId, locale };
+        if (contentId) q.contentId = new ObjectId(contentId);
+        return q;
+      };
+
+      const contentTranslation: any[] =
         contentCollection.type === ContentCollectionTypeEnum.SINGLE
-          ? [await contentTranslationService.findOne(matchTranslationQuery)]
-          : await contentTranslationService.findMany(matchTranslationQuery, { sort: { contentId: 1 } });
+          ? [await contentTranslationService.findOne(buildTranslationQuery(requestedLocale))].filter(Boolean)
+          : await contentTranslationService.findMany(buildTranslationQuery(requestedLocale), {
+              sort: { contentId: 1 },
+            });
 
-      const fullSchema =
-        contentCollection.type === ContentCollectionTypeEnum.COLLECTION
-          ? { type: "array", items: await attributeService.getValidationSchema(contentCollection) }
-          : await attributeService.getValidationSchema(contentCollection);
+      // 5. Detect missing translation
+      const localeNotFound = !contentTranslation.some((t) => t && Object.keys(t.data || {}).length > 0);
 
-      // Merge translations properly
-      const mergedData = await mergeTranslatableFields(
-        content.map((c) => c?.data),
-        contentTranslation.map((t) => t?.data || {}), // handle missing translations
-        fullSchema,
+      // 6. IMPORTANT: schema MUST be OBJECT schema (not array)
+      const fullSchema = await attributeService.getValidationSchema(contentCollection);
+
+      // 7. Merge per content item (THIS IS THE KEY FIX)
+      const mergedData = content.map((c, idx) =>
+        mergeTranslatableFields(
+          c.data ?? {}, // shared data (object)
+          contentTranslation[idx]?.data ?? {}, // translation data (object)
+          fullSchema, // object schema
+        ),
       );
 
-      // Map merged data into FullContent objects
+      // 8. Build response
       const fullContents: FullContent[] = content.map((c, idx) => ({
         ...c,
+        requestedLocale,
+        resolvedLocale: requestedLocale,
+        localeNotFound,
+        tenantLocale: tenantLocaleExists,
         fullData: mergedData[idx],
       }));
 

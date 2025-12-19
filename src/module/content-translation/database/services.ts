@@ -6,12 +6,7 @@ import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
 import { ContentTranslation, CreateContentTranslationData, FullContentTranslation, UpdateContentTranslationData } from "./models";
-import ajv, {
-  filterDataBySchema,
-  preValidateComponentPlaceholders,
-  separateTranslatableFields,
-  splitSchemaByLocalizable,
-} from "../../../utils/helper.ajv";
+import ajv, { preValidateComponentPlaceholders, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
 import { ValidateFunction } from "ajv";
 import { ContentCollection } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
@@ -63,10 +58,8 @@ class ContentTranslationService extends BaseService {
     if (!fullSchema) throw new ValidationError("Content collection schema is missing");
 
     const { localizableSchema } = splitSchemaByLocalizable(fullSchema);
-    const filteredData = filterDataBySchema(fullSchema, data, true);
-    createData.data = filteredData;
-
-    console.log(filteredData);
+    const { translation } = separateTranslatableFields(data, fullSchema);
+    createData.data = translation;
 
     try {
       preValidateComponentPlaceholders(localizableSchema);
@@ -81,7 +74,7 @@ class ContentTranslationService extends BaseService {
       throw new Error(`Invalid schema: ${(err as Error).message}`);
     }
 
-    if (!validate(filteredData)) {
+    if (!validate(translation)) {
       const errorText = ajv.errorsText(validate.errors, { separator: ", " });
       throw new ValidationError(`Data validation failed: ${errorText}`);
     }
@@ -104,15 +97,13 @@ class ContentTranslationService extends BaseService {
     const userId = getCurrentUserId(this.context);
 
     // Inject contentId for nested components
-    const { shared, translation } = separateTranslatableFields(validatedData.data, fullSchema);
-
     const newContent: ContentTranslation = {
       _id: new ObjectId(),
       contentCollectionId: contentCollection._id,
       tenantLocaleId: tenantLocale._id,
       contentId: content._id,
       locale: tenantLocale.locale,
-      data: translation, // only localizable fields
+      data: validatedData.data, // only localizable fields
       status: validatedData.status as ContentStatusEnum,
       isDefault: tenantLocale.isDefault,
       createdAt: new Date(),
@@ -199,9 +190,8 @@ class ContentTranslationService extends BaseService {
 
       // Filter schema to only localizable fields
       const { localizableSchema } = splitSchemaByLocalizable(fullSchema);
-      const filteredData = filterDataBySchema(fullSchema, data, true);
-      updateData.data = filteredData;
-      console.log(filteredData);
+      const { translation } = separateTranslatableFields(data, fullSchema);
+      updateData.data = translation;
 
       // Validate against filtered schema
       try {
@@ -212,7 +202,7 @@ class ContentTranslationService extends BaseService {
 
       let validate: ValidateFunction;
       try {
-        validate = ajv.compile(filteredData);
+        validate = ajv.compile(translation);
       } catch (err) {
         throw new Error(`Invalid schema: ${(err as Error).message}`);
       }
@@ -243,7 +233,6 @@ class ContentTranslationService extends BaseService {
 
     // Inject contentId for nested components
     const { translation } = separateTranslatableFields(validatedData.data, fullSchema);
-    console.log({ translation });
 
     const updatingFields: Partial<ContentTranslation> = {
       ...validatedData,

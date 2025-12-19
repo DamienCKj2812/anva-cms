@@ -1,5 +1,6 @@
 import { ObjectId } from "mongodb";
 import { CreateContentTranslationData } from "../../content-translation/database/models";
+import { TenantLocale } from "../../tenant-locale/database/models";
 
 export enum ContentStatusEnum {
   DRAFT = "draft",
@@ -34,5 +35,9 @@ export interface UpdateContentData {
 }
 
 export interface FullContent extends Content {
+  requestedLocale: string;
+  resolvedLocale: string;
+  localeNotFound: boolean;
+  tenantLocale: TenantLocale;
   fullData: any;
 }

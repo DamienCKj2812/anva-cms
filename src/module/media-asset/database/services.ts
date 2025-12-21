@@ -49,6 +49,7 @@ class MediaAssetService extends BaseService {
               width: uploads[i].width,
               url: uploads[i].url,
               storageKey: uploads[i].storageKey,
+              size: uploads[i].size,
             },
           },
         },

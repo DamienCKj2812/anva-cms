@@ -74,7 +74,7 @@ class FileUploaderGCSService extends BaseService {
   public async uploadImageToGCS(
     file: Express.Multer.File,
     clientWidth?: number,
-  ): Promise<{ mimetype: string; storageKey: string; url: string; width: number; height: number }> {
+  ): Promise<{ mimetype: string; storageKey: string; url: string; width: number; height: number; size: number }> {
     if (!file.mimetype.startsWith("image/")) {
       throw new BadRequestError(`${file.originalname} is not an image`);
     }
@@ -118,6 +118,7 @@ class FileUploaderGCSService extends BaseService {
       url: `https://storage.googleapis.com/${bucket.name}/${storageKey}`,
       width,
       height,
+      size: webpBuffer.length,
     };
   }
 

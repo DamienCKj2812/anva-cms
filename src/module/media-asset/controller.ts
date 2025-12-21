@@ -54,6 +54,7 @@ const mediaAssetController = (context: AppContext) => {
           throw new NotFoundError("Please provide ?filter=byId or ?filter=byUrl");
       }
       const mediaAssets = await mediaAssetService.findMany(mongoFilter);
+      console.log({ mediaAssets });
       if (!mediaAssets || mediaAssets.length === 0) {
         throw new NotFoundError("Media assets not found");
       }

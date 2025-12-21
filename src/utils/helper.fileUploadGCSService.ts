@@ -74,32 +74,46 @@ class FileUploaderGCSService extends BaseService {
   public async uploadImageToGCS(
     file: Express.Multer.File,
     clientWidth?: number,
-  ): Promise<{ storageKey: string; url: string; width: number; height: number }> {
+  ): Promise<{ mimetype: string; storageKey: string; url: string; width: number; height: number }> {
     if (!file.mimetype.startsWith("image/")) {
       throw new BadRequestError(`${file.originalname} is not an image`);
     }
-    const compressedBuffer = await this.compressImage(file, clientWidth);
-    const metadata = await sharp(compressedBuffer).metadata();
+
+    let image = sharp(file.buffer);
+
+    if (clientWidth) {
+      image = image.resize({ width: clientWidth });
+    }
+
+    const webpBuffer = await image.webp({ quality: 80 }).toBuffer();
+
+    // Get metadata
+    const metadata = await sharp(webpBuffer).metadata();
     const width = metadata.width ?? 0;
     const height = metadata.height ?? 0;
 
+    // Set bucket and storage key
     const bucketName = this.context.orgBucketName || configs.GCLOUD_CONFIGS.GCLOUD_DEFAULT_BUCKET;
     const bucket = this.storage.bucket(bucketName);
-    const storageKey = this.getStorageKey(file);
+
+    // Change file extension to .webp
+    const storageKey = this.getStorageKey(file).replace(/\.\w+$/, ".webp");
     const blob = bucket.file(storageKey);
 
+    // Upload
     await new Promise<void>((resolve, reject) => {
       const stream = blob.createWriteStream({
-        metadata: { contentType: file.mimetype },
+        metadata: { contentType: "image/webp" },
         resumable: false,
       });
 
       stream.on("error", reject);
       stream.on("finish", () => resolve());
-      stream.end(compressedBuffer);
+      stream.end(webpBuffer);
     });
 
     return {
+      mimetype: "image/webp",
       storageKey,
       url: `https://storage.googleapis.com/${bucket.name}/${storageKey}`,
       width,

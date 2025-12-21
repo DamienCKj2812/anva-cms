@@ -42,9 +42,17 @@ class MediaAssetService extends BaseService {
       assets.map((asset, i) => ({
         updateOne: {
           filter: { _id: asset._id },
-          update: { $set: { height: uploads[i].height, width: uploads[i].width, url: uploads[i].url, storageKey: uploads[i].storageKey } },
+          update: {
+            $set: {
+              mimeType: uploads[i].mimetype,
+              height: uploads[i].height,
+              width: uploads[i].width,
+              url: uploads[i].url,
+              storageKey: uploads[i].storageKey,
+            },
+          },
         },
-      }))
+      })),
     );
     assets.forEach((a, i) => {
       a.url = uploads[i].url;
@@ -76,14 +84,19 @@ class MediaAssetService extends BaseService {
     };
   }
 
-  private async createImageBulk(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService, session?: ClientSession): Promise<MediaAsset[]> {
+  private async createImageBulk(
+    data: CreateFileData,
+    files: Express.Multer.File[],
+    fileUploaderGCSService: FileUploaderGCSService,
+    session?: ClientSession,
+  ): Promise<MediaAsset[]> {
     const userId = getCurrentUserId(this.context);
     const { validatedData, tenant, parent } = await this.createFileValidation(data);
 
     const names = await this.getUniqueMediaAssetNamesBatch(
       tenant._id!,
       parent?._id ?? null,
-      files.map((f) => f.originalname)
+      files.map((f) => f.originalname),
     );
 
     const assets: MediaAsset[] = [];
@@ -135,7 +148,7 @@ class MediaAssetService extends BaseService {
           filter: { _id: asset._id },
           update: { $set: { url: uploads[i].url, storageKey: uploads[i].storageKey } },
         },
-      }))
+      })),
     );
     assets.forEach((a, i) => {
       a.url = uploads[i].url;
@@ -144,14 +157,19 @@ class MediaAssetService extends BaseService {
     return assets;
   }
 
-  private async createVideoBulk(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService, session?: ClientSession): Promise<MediaAsset[]> {
+  private async createVideoBulk(
+    data: CreateFileData,
+    files: Express.Multer.File[],
+    fileUploaderGCSService: FileUploaderGCSService,
+    session?: ClientSession,
+  ): Promise<MediaAsset[]> {
     const userId = getCurrentUserId(this.context);
     const { validatedData, tenant, parent } = await this.createFileValidation(data);
 
     const names = await this.getUniqueMediaAssetNamesBatch(
       tenant._id!,
       parent?._id ?? null,
-      files.map((f) => f.originalname)
+      files.map((f) => f.originalname),
     );
 
     const assets: MediaAsset[] = [];
@@ -229,7 +247,7 @@ class MediaAssetService extends BaseService {
           parentId,
           $or: regexes.map((r) => ({ name: { $regex: r } })),
         },
-        { projection: { name: 1 } }
+        { projection: { name: 1 } },
       )
       .toArray();
 

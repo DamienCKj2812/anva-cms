@@ -73,8 +73,9 @@ class FileUploaderGCSService extends BaseService {
 
   public async uploadImageToGCS(
     file: Express.Multer.File,
+    targetName: string, // new param
     clientWidth?: number,
-  ): Promise<{ mimetype: string; storageKey: string; url: string; width: number; height: number; size: number }> {
+  ): Promise<{ name: string; mimetype: string; storageKey: string; url: string; width: number; height: number; size: number }> {
     if (!file.mimetype.startsWith("image/")) {
       throw new BadRequestError(`${file.originalname} is not an image`);
     }
@@ -87,32 +88,31 @@ class FileUploaderGCSService extends BaseService {
 
     const webpBuffer = await image.webp({ quality: 80 }).toBuffer();
 
-    // Get metadata
     const metadata = await sharp(webpBuffer).metadata();
     const width = metadata.width ?? 0;
     const height = metadata.height ?? 0;
 
-    // Set bucket and storage key
     const bucketName = this.context.orgBucketName || configs.GCLOUD_CONFIGS.GCLOUD_DEFAULT_BUCKET;
     const bucket = this.storage.bucket(bucketName);
 
-    // Change file extension to .webp
-    const storageKey = this.getStorageKey(file).replace(/\.\w+$/, ".webp");
+    // Use the unique targetName, change extension to .webp
+    const baseName = targetName.replace(/\.\w+$/, ""); // strip old extension
+    const convertedFileName = `${baseName}.webp`;
+    const storageKey = this.getStorageKey(convertedFileName);
     const blob = bucket.file(storageKey);
 
-    // Upload
     await new Promise<void>((resolve, reject) => {
       const stream = blob.createWriteStream({
         metadata: { contentType: "image/webp" },
         resumable: false,
       });
-
       stream.on("error", reject);
       stream.on("finish", () => resolve());
       stream.end(webpBuffer);
     });
 
     return {
+      name: convertedFileName,
       mimetype: "image/webp",
       storageKey,
       url: `https://storage.googleapis.com/${bucket.name}/${storageKey}`,
@@ -122,25 +122,52 @@ class FileUploaderGCSService extends BaseService {
     };
   }
 
-  public async uploadVideoToGCS(file: Express.Multer.File): Promise<{ storageKey: string; url: string }> {
+  public async uploadVideoToGCS(
+    file: Express.Multer.File,
+    targetName: string,
+  ): Promise<{
+    name: string;
+    storageKey: string;
+    url: string;
+    size: number;
+    mimetype: string;
+    width?: number;
+    height?: number;
+    duration?: number;
+    thumbnailUrl?: string;
+  }> {
     if (!file.mimetype.startsWith("video/")) {
-      throw new BadRequestError(`Invalid file type: ${file.originalname} is not an video`);
+      throw new BadRequestError(`${file.originalname} is not a video`);
     }
+
     const bucketName = this.context.orgBucketName || configs.GCLOUD_CONFIGS.GCLOUD_DEFAULT_BUCKET;
     const bucket = this.storage.bucket(bucketName);
-    const storageKey = this.getStorageKey(file);
+
+    const storageKey = this.getStorageKey(targetName);
     const blob = bucket.file(storageKey);
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const stream = blob.createWriteStream({
         metadata: { contentType: file.mimetype },
-        resumable: true, // large file
+        resumable: true,
       });
 
       stream.on("error", reject);
-      stream.on("finish", () => resolve({ storageKey, url: `https://storage.googleapis.com/${bucket.name}/${storageKey}` }));
+      stream.on("finish", resolve);
       stream.end(file.buffer);
     });
+
+    return {
+      name: targetName,
+      storageKey,
+      url: `https://storage.googleapis.com/${bucket.name}/${storageKey}`,
+      size: file.size,
+      mimetype: file.mimetype,
+      width: undefined, // optional, can fill later
+      height: undefined,
+      duration: undefined,
+      thumbnailUrl: undefined,
+    };
   }
 
   // Multer middlewares
@@ -160,9 +187,8 @@ class FileUploaderGCSService extends BaseService {
     return `org-${context.currentUser?.id}/uploads`;
   }
 
-  public getStorageKey(file: Express.Multer.File): string {
-    const uniqueName = `${Date.now()}-${file.originalname}`;
-    return `${this.getFolderPrefix(this.context)}/${uniqueName}`;
+  public getStorageKey(name: string): string {
+    return `${this.getFolderPrefix(this.context)}/${name}`;
   }
 
   async compressImage(file: Express.Multer.File, clientWidth?: number): Promise<Buffer> {

@@ -60,6 +60,7 @@ class ContentTranslationService extends BaseService {
     const { localizableSchema } = splitSchemaByLocalizable(fullSchema);
     const { translation } = separateTranslatableFields(data, fullSchema);
     createData.data = translation;
+    await this.contentService.validateMediaAssetInContent(tenantLocale.tenantId, translation, localizableSchema);
 
     try {
       preValidateComponentPlaceholders(localizableSchema);
@@ -192,6 +193,7 @@ class ContentTranslationService extends BaseService {
       const { localizableSchema } = splitSchemaByLocalizable(fullSchema);
       const { translation } = separateTranslatableFields(data, fullSchema);
       updateData.data = translation;
+      await this.contentService.validateMediaAssetInContent(content.tenantId, translation, localizableSchema);
 
       // Validate against filtered schema
       try {

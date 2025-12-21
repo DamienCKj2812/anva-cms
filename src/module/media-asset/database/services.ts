@@ -33,33 +33,8 @@ class MediaAssetService extends BaseService {
     await this.collection.createIndex({ tenantId: 1, parentId: 1, name: 1 });
   }
 
-  async createImages(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset[]> {
-    if (!files || files.length === 0) throw new BadRequestError("No files provided");
-    const uploads = await Promise.all(files.map((f) => fileUploaderGCSService.uploadImageToGCS(f)));
-    const assets = await this.createImageBulk(data, files, fileUploaderGCSService);
-    // Update URLs after bulk insert
-    await this.collection.bulkWrite(
-      assets.map((asset, i) => ({
-        updateOne: {
-          filter: { _id: asset._id },
-          update: {
-            $set: {
-              mimeType: uploads[i].mimetype,
-              height: uploads[i].height,
-              width: uploads[i].width,
-              url: uploads[i].url,
-              storageKey: uploads[i].storageKey,
-              size: uploads[i].size,
-            },
-          },
-        },
-      })),
-    );
-    assets.forEach((a, i) => {
-      a.url = uploads[i].url;
-      a.storageKey = uploads[i].storageKey;
-    });
-    return assets;
+  getCollection(): Collection<MediaAsset> {
+    return this.collection;
   }
 
   private async createFileValidation(data: CreateFileData): Promise<{ validatedData: CreateFileData; tenant: Tenant; parent: Folder | null }> {
@@ -85,14 +60,13 @@ class MediaAssetService extends BaseService {
     };
   }
 
-  private async createImageBulk(
-    data: CreateFileData,
-    files: Express.Multer.File[],
-    fileUploaderGCSService: FileUploaderGCSService,
-    session?: ClientSession,
-  ): Promise<MediaAsset[]> {
-    const userId = getCurrentUserId(this.context);
+  async createImages(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset[]> {
+    if (!files || files.length === 0) {
+      throw new BadRequestError("No files provided");
+    }
+
     const { validatedData, tenant, parent } = await this.createFileValidation(data);
+    const userId = getCurrentUserId(this.context);
 
     const names = await this.getUniqueMediaAssetNamesBatch(
       tenant._id!,
@@ -100,27 +74,25 @@ class MediaAssetService extends BaseService {
       files.map((f) => f.originalname),
     );
 
-    const assets: MediaAsset[] = [];
-    const operations: any[] = [];
+    const uploads = await Promise.all(files.map((file, i) => fileUploaderGCSService.uploadImageToGCS(file, names[i])));
 
-    files.forEach((file, i) => {
+    const assets: MediaAsset[] = files.map((file, i) => {
       if (!file.mimetype.startsWith("image/")) {
         throw new BadRequestError(`Invalid file type: ${file.originalname} is not an image`);
       }
 
-      const storageKey = fileUploaderGCSService.getStorageKey(file);
-      const asset: MediaAsset = {
+      return {
         _id: new ObjectId(),
         tenantId: tenant._id,
-        originalFileName: file.originalname,
-        name: names[i],
+        originalFileName: uploads[i].name,
+        name: uploads[i].name,
         parentId: parent?._id ?? null,
-        storageKey,
-        size: file.size,
-        mimeType: file.mimetype,
-        url: "", // placeholder
-        width: null, // placeholder
-        height: null, // placeholder
+        storageKey: uploads[i].storageKey,
+        size: uploads[i].size,
+        mimeType: uploads[i].mimetype,
+        url: uploads[i].url,
+        width: uploads[i].width,
+        height: uploads[i].height,
         duration: null,
         thumbnailUrl: null,
         metadata: null,
@@ -128,44 +100,20 @@ class MediaAssetService extends BaseService {
         createdAt: new Date(),
         updatedAt: null,
       };
-      assets.push(asset);
-      operations.push({ insertOne: { document: asset } });
     });
 
-    const result = await this.collection.bulkWrite(operations, { session });
-    Object.values(result.insertedIds).forEach((id, idx) => (assets[idx]._id = id as ObjectId));
+    await this.collection.insertMany(assets);
+
     return assets;
   }
 
   async createVideos(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset[]> {
-    if (!files || files.length === 0) throw new BadRequestError("No files provided");
+    if (!files || files.length === 0) {
+      throw new BadRequestError("No files provided");
+    }
 
-    const uploads = await Promise.all(files.map((f) => fileUploaderGCSService.uploadVideoToGCS(f)));
-    const assets = await this.createVideoBulk(data, files, fileUploaderGCSService);
-    // Update URLs after bulk insert
-    await this.collection.bulkWrite(
-      assets.map((asset, i) => ({
-        updateOne: {
-          filter: { _id: asset._id },
-          update: { $set: { url: uploads[i].url, storageKey: uploads[i].storageKey } },
-        },
-      })),
-    );
-    assets.forEach((a, i) => {
-      a.url = uploads[i].url;
-      a.storageKey = uploads[i].storageKey;
-    });
-    return assets;
-  }
-
-  private async createVideoBulk(
-    data: CreateFileData,
-    files: Express.Multer.File[],
-    fileUploaderGCSService: FileUploaderGCSService,
-    session?: ClientSession,
-  ): Promise<MediaAsset[]> {
-    const userId = getCurrentUserId(this.context);
     const { validatedData, tenant, parent } = await this.createFileValidation(data);
+    const userId = getCurrentUserId(this.context);
 
     const names = await this.getUniqueMediaAssetNamesBatch(
       tenant._id!,
@@ -173,40 +121,37 @@ class MediaAssetService extends BaseService {
       files.map((f) => f.originalname),
     );
 
-    const assets: MediaAsset[] = [];
-    const operations: any[] = [];
+    const uploads = await Promise.all(files.map((file, i) => fileUploaderGCSService.uploadVideoToGCS(file, names[i])));
 
-    files.forEach((file, i) => {
+    const assets: MediaAsset[] = files.map((file, i) => {
       if (!file.mimetype.startsWith("video/")) {
-        throw new BadRequestError(`Invalid file type: ${file.originalname} is not an video`);
+        throw new BadRequestError(`Invalid file type: ${file.originalname} is not a video`);
       }
 
-      const storageKey = fileUploaderGCSService.getStorageKey(file);
-      const asset: MediaAsset = {
+      return {
         _id: new ObjectId(),
         tenantId: tenant._id!,
-        originalFileName: file.originalname,
-        name: names[i],
+        originalFileName: uploads[i].name,
+        name: uploads[i].name,
         parentId: parent?._id ?? null,
-        storageKey,
-        size: file.size,
-        mimeType: file.mimetype,
-        url: "", // placeholder
-        width: null,
-        height: null,
-        duration: null,
-        thumbnailUrl: null,
+        storageKey: uploads[i].storageKey,
+        size: uploads[i].size,
+        mimeType: uploads[i].mimetype,
+        url: uploads[i].url,
+        width: uploads[i].width ?? null,
+        height: uploads[i].height ?? null,
+        duration: uploads[i].duration ?? null,
+        thumbnailUrl: uploads[i].thumbnailUrl ?? null,
         metadata: null,
         createdBy: userId,
         createdAt: new Date(),
         updatedAt: null,
       };
-      assets.push(asset);
-      operations.push({ insertOne: { document: asset } });
     });
 
-    const result = await this.collection.bulkWrite(operations, { session });
-    Object.values(result.insertedIds).forEach((id, idx) => (assets[idx]._id = id as ObjectId));
+    // 5️⃣ Insert all assets in one go
+    await this.collection.insertMany(assets);
+
     return assets;
   }
 

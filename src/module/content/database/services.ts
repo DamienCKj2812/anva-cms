@@ -5,16 +5,23 @@ import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import { Content, ContentCount, ContentStatusEnum, CreateContentData, UpdateContentData } from "./models";
+import { Content, ContentStatusEnum, CreateContentData, UpdateContentData } from "./models";
 import ContentCollectionService from "../../content-collection/database/services";
 import { ContentCollection, ContentCollectionTypeEnum } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
 import ContentTranslationService from "../../content-translation/database/services";
 import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
-import ajv, { preValidateComponentPlaceholders, separateTranslatableFields, splitSchemaByLocalizable } from "../../../utils/helper.ajv";
-import { ContentTranslation, CreateContentTranslationData } from "../../content-translation/database/models";
+import ajv, {
+  getMediaUriKeys,
+  getValuesByKeys,
+  preValidateComponentPlaceholders,
+  separateTranslatableFields,
+  splitSchemaByLocalizable,
+} from "../../../utils/helper.ajv";
+import { CreateContentTranslationData } from "../../content-translation/database/models";
 import TenantLocaleService from "../../tenant-locale/database/services";
+import MediaAssetService from "../../media-asset/database/services";
 
 class ContentService extends BaseService {
   private db: Db;
@@ -25,6 +32,7 @@ class ContentService extends BaseService {
   private contentTranslationService: ContentTranslationService;
   private attributeService: AttributeService;
   private tenantLocaleService: TenantLocaleService;
+  private mediaAssetService: MediaAssetService;
 
   constructor(context: AppContext) {
     super(context);
@@ -37,6 +45,7 @@ class ContentService extends BaseService {
     this.contentTranslationService = this.getService("ContentTranslationService");
     this.attributeService = this.getService("AttributeService");
     this.tenantLocaleService = this.getService("TenantLocaleService");
+    this.mediaAssetService = this.getService("MediaAssetService");
   }
 
   getCollection(): Collection<Content> {
@@ -60,6 +69,7 @@ class ContentService extends BaseService {
       if (!fullSchema) {
         throw new Error("fullSchema is missing");
       }
+      await this.validateMediaAssetInContent(contentCollection.tenantId, data, fullSchema);
       preValidateComponentPlaceholders(fullSchema);
       validate = ajv.compile(fullSchema);
     } catch (err) {
@@ -158,6 +168,8 @@ class ContentService extends BaseService {
       const { shared } = separateTranslatableFields(data, fullSchema);
       updateData.data = shared;
 
+      await this.validateMediaAssetInContent(content.tenantId, shared, sharedSchema);
+
       try {
         preValidateComponentPlaceholders(sharedSchema);
       } catch (err) {
@@ -209,6 +221,32 @@ class ContentService extends BaseService {
     await this.contentTranslationService.getCollection().deleteMany({ contentId: content._id });
     await this.collection.deleteOne({ _id: content._id });
     return content;
+  }
+
+  async validateMediaAssetInContent(tenantId: ObjectId, data: any, schema: any) {
+    const mediaUriKeys = getMediaUriKeys(schema);
+
+    if (mediaUriKeys.length > 0) {
+      const mediaUris = getValuesByKeys(data, mediaUriKeys)
+        .flat()
+        .filter((v): v is string => typeof v === "string");
+      const uniqueMediaUris = [...new Set(mediaUris)];
+      const mediaAssets = await this.mediaAssetService
+        .getCollection()
+        .find({
+          tenantId: tenantId,
+          url: { $in: uniqueMediaUris },
+        })
+        .project({ url: 1 })
+        .toArray();
+      console.log({ mediaUriKeys });
+      console.log({ uniqueMediaUris });
+      const existingUrls = new Set(mediaAssets.map((a) => a.url));
+      const missingUris = uniqueMediaUris.filter((uri) => !existingUrls.has(uri));
+      if (missingUris.length > 0) {
+        throw new ValidationError(`You must use media that exists in your media assets. Missing: ${missingUris.join(", ")}`);
+      }
+    }
   }
 }
 

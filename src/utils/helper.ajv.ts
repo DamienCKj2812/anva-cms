@@ -34,6 +34,61 @@ ajv.addFormat("media-uri", {
 
 export default ajv;
 
+export function getMediaUriKeys(schema: any, parentKey?: string, result: string[] = []): string[] {
+  if (!schema || typeof schema !== "object") return result;
+
+  // Found media-uri
+  if (schema.format === "media-uri" && parentKey) {
+    result.push(parentKey);
+  }
+
+  // Object properties (this is where keys come from)
+  if (schema.properties) {
+    for (const [key, prop] of Object.entries(schema.properties)) {
+      getMediaUriKeys(prop, key, result);
+    }
+  }
+
+  // Array items (same key as parent)
+  if (schema.items) {
+    if (Array.isArray(schema.items)) {
+      for (const item of schema.items) {
+        getMediaUriKeys(item, parentKey, result);
+      }
+    } else {
+      getMediaUriKeys(schema.items, parentKey, result);
+    }
+  }
+
+  return result;
+}
+
+export function getValuesByKeys(data: any, keys: string[]): any[] {
+  const result: any[] = [];
+
+  function traverse(obj: any) {
+    if (!obj || typeof obj !== "object") return;
+
+    for (const [key, value] of Object.entries(obj)) {
+      if (keys.includes(key)) {
+        if (Array.isArray(value)) {
+          result.push(...value);
+        } else {
+          result.push(value);
+        }
+      }
+
+      // Recurse deeper
+      if (typeof value === "object") {
+        traverse(value);
+      }
+    }
+  }
+
+  traverse(data);
+  return result;
+}
+
 export function preValidateComponentPlaceholders(schema: any, path = "data") {
   if (!schema || typeof schema !== "object") {
     throw new ValidationError(`Invalid schema at "${path}". Expected an object, but received ${typeof schema}`);

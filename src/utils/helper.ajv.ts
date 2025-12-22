@@ -122,74 +122,82 @@ export function preValidateComponentPlaceholders(schema: any, path = "data") {
 }
 
 export function splitSchemaByLocalizable(schema: any): {
-  sharedSchema: any | null;
-  localizableSchema: any | null;
+  sharedSchema: any;
+  localizableSchema: any;
 } {
-  if (!schema) return { sharedSchema: null, localizableSchema: null };
+  if (!schema) {
+    return {
+      sharedSchema: { type: "object", properties: {} },
+      localizableSchema: { type: "object", properties: {} },
+    };
+  }
 
-  // PRIMITIVE
+  // Primitive
   if (!schema.type || (schema.type !== "object" && schema.type !== "array")) {
     const isLocalizable = !!schema.localizable;
 
     return {
-      sharedSchema: isLocalizable ? null : schema,
-      localizableSchema: isLocalizable ? schema : null,
+      sharedSchema: isLocalizable ? { type: "object", properties: {} } : schema,
+      localizableSchema: isLocalizable ? schema : { type: "object", properties: {} },
     };
   }
 
-  // OBJECT
+  // Object
   if (schema.type === "object") {
-    const sharedProps: any = {};
+    const sharedProps: Record<string, any> = {};
     const sharedRequired: string[] = [];
-    const localProps: any = {};
+    const localProps: Record<string, any> = {};
     const localRequired: string[] = [];
 
-    for (const [key, prop] of Object.entries(schema.properties || {})) {
+    for (const [key, prop] of Object.entries(schema.properties || {}) as [string, any][]) {
       const { sharedSchema, localizableSchema } = splitSchemaByLocalizable(prop);
 
-      if (sharedSchema) {
+      if ((sharedSchema && Object.keys(sharedSchema.properties || {}).length > 0) || prop.type !== "object") {
         sharedProps[key] = sharedSchema;
         if (schema.required?.includes(key)) sharedRequired.push(key);
       }
 
-      if (localizableSchema) {
+      if ((localizableSchema && Object.keys(localizableSchema.properties || {}).length > 0) || prop.type !== "object") {
         localProps[key] = localizableSchema;
         if (schema.required?.includes(key)) localRequired.push(key);
       }
     }
 
     return {
-      sharedSchema:
-        Object.keys(sharedProps).length > 0
-          ? {
-              ...schema,
-              properties: sharedProps,
-              ...(sharedRequired.length ? { required: sharedRequired } : {}),
-            }
-          : null,
-
-      localizableSchema:
-        Object.keys(localProps).length > 0
-          ? {
-              ...schema,
-              properties: localProps,
-              ...(localRequired.length ? { required: localRequired } : {}),
-            }
-          : null,
+      sharedSchema: {
+        ...schema,
+        properties: sharedProps,
+        ...(sharedRequired.length ? { required: sharedRequired } : {}),
+      },
+      localizableSchema: {
+        ...schema,
+        properties: localProps,
+        ...(localRequired.length ? { required: localRequired } : {}),
+      },
     };
   }
 
-  // ARRAY
+  // Array
   if (schema.type === "array") {
     const { sharedSchema: sharedItems, localizableSchema: localItems } = splitSchemaByLocalizable(schema.items);
 
     return {
-      sharedSchema: sharedItems ? { ...schema, items: sharedItems } : null,
-      localizableSchema: localItems ? { ...schema, items: localItems } : null,
+      sharedSchema: {
+        ...schema,
+        items: sharedItems || { type: "object", properties: {} },
+      },
+      localizableSchema: {
+        ...schema,
+        items: localItems || { type: "object", properties: {} },
+      },
     };
   }
 
-  return { sharedSchema: null, localizableSchema: null };
+  // Fallback
+  return {
+    sharedSchema: { type: "object", properties: {} },
+    localizableSchema: { type: "object", properties: {} },
+  };
 }
 
 // Need to sort the shared and translation correctly by contentId

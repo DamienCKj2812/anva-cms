@@ -167,6 +167,8 @@ class ContentService extends BaseService {
       // !Important
       const { shared } = separateTranslatableFields(data, fullSchema);
       updateData.data = shared;
+      console.log({ sharedSchema });
+      console.log({ shared });
 
       await this.validateMediaAssetInContent(content.tenantId, shared, sharedSchema);
 

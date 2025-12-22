@@ -249,6 +249,7 @@ class AttributeComponentService extends BaseService {
 
     const existKey = await this.attributeService.findOne({
       componentRefId: attributeComponent._id,
+      attributeKind: AttributeKindEnum.COMPONENT_PRIMITIVE,
       key,
     });
     if (existKey) {
@@ -302,6 +303,7 @@ class AttributeComponentService extends BaseService {
       _id: new ObjectId(),
       key: validatedData.key,
       label: validatedData.label,
+      tenantId: attributeComponent.tenantId,
       attributeKind: AttributeKindEnum.COMPONENT_PRIMITIVE,
       componentRefId: attributeComponent._id,
       attributeType: validatedData.attributeType,

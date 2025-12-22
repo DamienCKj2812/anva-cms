@@ -31,6 +31,7 @@ export interface ValidationRules {
 
 export interface Attribute {
   _id: ObjectId;
+  tenantId: ObjectId;
   contentCollectionId?: ObjectId;
   // Not modifieable
   key: string;

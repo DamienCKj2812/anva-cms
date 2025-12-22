@@ -167,6 +167,7 @@ class AttributeService extends BaseService {
     const attributeCount = await this.collection.countDocuments({ contentCollectionId: contentCollection._id });
     const newAttribute: Attribute = {
       _id: new ObjectId(),
+      tenantId: contentCollection.tenantId,
       contentCollectionId: contentCollection._id,
       key: validatedData.key,
       label: validatedData.label,
@@ -336,8 +337,8 @@ class AttributeService extends BaseService {
 
     const newAttribute: Attribute = {
       _id: new ObjectId(),
+      tenantId: contentCollection.tenantId,
       contentCollectionId: contentCollection._id,
-
       key: validatedData.key,
       label: validatedData.label,
       attributeKind: AttributeKindEnum.COMPONENT,
@@ -647,36 +648,34 @@ class AttributeService extends BaseService {
 
       // COMPONENT
       if (attr.attributeKind === AttributeKindEnum.COMPONENT) {
-        const componentSchema = attr.component?.schema;
+        const componentSchema = attr.component?.schema ?? {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        };
 
-        if (!componentSchema) {
-          console.warn(`⚠ Missing component schema for attribute: ${attr.key}`);
-          continue;
-        }
-
+        // force array wrapping if repeatable
         if (attr.repeatable) {
           finalSchema = {
             type: "array",
             attributeId: attr._id,
             componentRefId: attr.componentRefId,
-            items: {
-              ...componentSchema,
-            },
+            items: componentSchema,
             minItems: 0,
           };
         } else {
           finalSchema = {
-            ...componentSchema,
+            type: "object", // ensure type exists even if non-repeatable
+            properties: componentSchema.properties ?? {},
+            required: componentSchema.required ?? [],
+            additionalProperties: componentSchema.additionalProperties ?? false,
             attributeId: attr._id,
             componentRefId: attr.componentRefId,
           };
         }
 
         schema.properties[attr.key] = finalSchema;
-        if (attr.required && !schema.required.includes(attr.key)) {
-          schema.required.push(attr.key);
-        }
-        continue;
       }
     }
 

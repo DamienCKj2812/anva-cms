@@ -474,21 +474,14 @@ class AttributeComponentService extends BaseService {
   }
 
   async buildSchemaForComponent(attributeComponent: AttributeComponent): Promise<AttributeComponent> {
-    let schema: any;
-
-    schema = {
+    let schema: any = {
       type: "object",
       properties: {},
       required: [] as string[],
       additionalProperties: false,
     };
 
-    const attributes = await this.attributeService.findMany(
-      {
-        _id: { $in: attributeComponent.attributes },
-      },
-      { sort: { position: 1 } },
-    );
+    const attributes = await this.attributeService.findMany({ _id: { $in: attributeComponent.attributes } }, { sort: { position: 1 } });
 
     for (const attribute of attributes) {
       if (attribute.attributeKind !== AttributeKindEnum.PRIMITIVE && attribute.attributeKind !== AttributeKindEnum.COMPONENT_PRIMITIVE) {
@@ -503,21 +496,23 @@ class AttributeComponentService extends BaseService {
       const property: any = {
         type: attribute.attributeType,
         attributeId: attribute._id,
+        localizable: attribute.localizable,
+        ...attribute.validation,
       };
 
-      // Add standard primitive properties
       if (attribute.attributeFormat) property.format = attribute.attributeFormat;
       if (attribute.enumValues?.length) property.enum = attribute.enumValues;
       if (attribute.defaultValue !== undefined) property.default = attribute.defaultValue;
 
-      property.localizable = attribute.localizable;
+      // Wrap in array if repeatable
+      const finalProperty = attribute.repeatable
+        ? {
+            type: "array",
+            items: property,
+          }
+        : property;
 
-      // Apply validation rules
-      if (attribute.validation) {
-        Object.assign(property, attribute.validation);
-      }
-
-      schema.properties[attribute.key] = property;
+      schema.properties[attribute.key] = finalProperty;
 
       if (attribute.required) {
         schema.required.push(attribute.key);

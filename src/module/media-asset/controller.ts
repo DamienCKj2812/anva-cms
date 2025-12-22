@@ -86,7 +86,7 @@ const mediaAssetController = (context: AppContext) => {
     }
   });
 
-  router.post("/:tenantId/:googleProjectId/upload-videos", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:tenantId/upload-videos", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const gcsService = new FileUploaderGCSService(context).getInstance({});
       gcsService.getArrayMiddleware()(req, res, async (err) => {

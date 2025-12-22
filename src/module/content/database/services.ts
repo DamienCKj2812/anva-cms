@@ -14,7 +14,7 @@ import AttributeService from "../../attribute/database/services";
 import { ValidateFunction } from "ajv";
 import ajv, {
   getMediaUriKeys,
-  getValuesByKeys,
+  getValuesByPaths,
   preValidateComponentPlaceholders,
   separateTranslatableFields,
   splitSchemaByLocalizable,
@@ -227,22 +227,21 @@ class ContentService extends BaseService {
     const mediaUriKeys = getMediaUriKeys(schema);
 
     if (mediaUriKeys.length > 0) {
-      const mediaUris = getValuesByKeys(data, mediaUriKeys)
+      const mediaUris = getValuesByPaths(data, mediaUriKeys)
         .flat()
         .filter((v): v is string => typeof v === "string");
-      const uniqueMediaUris = [...new Set(mediaUris)];
+      console.log({ mediaUriKeys });
+      console.log({ mediaUris });
       const mediaAssets = await this.mediaAssetService
         .getCollection()
         .find({
           tenantId: tenantId,
-          url: { $in: uniqueMediaUris },
+          url: { $in: mediaUris },
         })
         .project({ url: 1 })
         .toArray();
-      console.log({ mediaUriKeys });
-      console.log({ uniqueMediaUris });
       const existingUrls = new Set(mediaAssets.map((a) => a.url));
-      const missingUris = uniqueMediaUris.filter((uri) => !existingUrls.has(uri));
+      const missingUris = mediaUris.filter((uri) => !existingUrls.has(uri));
       if (missingUris.length > 0) {
         throw new ValidationError(`You must use media that exists in your media assets. Missing: ${missingUris.join(", ")}`);
       }

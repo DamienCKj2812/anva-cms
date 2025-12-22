@@ -34,59 +34,71 @@ ajv.addFormat("media-uri", {
 
 export default ajv;
 
-export function getMediaUriKeys(schema: any, parentKey?: string, result: string[] = []): string[] {
+export function getMediaUriKeys(schema: any, parentPath = "", result: string[] = []): string[] {
   if (!schema || typeof schema !== "object") return result;
 
   // Found media-uri
-  if (schema.format === "media-uri" && parentKey) {
-    result.push(parentKey);
+  if (schema.format === "media-uri" && parentPath) {
+    result.push(parentPath);
   }
 
-  // Object properties (this is where keys come from)
+  // Object properties
   if (schema.properties) {
     for (const [key, prop] of Object.entries(schema.properties)) {
-      getMediaUriKeys(prop, key, result);
+      const nextPath = parentPath ? `${parentPath}.${key}` : key;
+      getMediaUriKeys(prop, nextPath, result);
     }
   }
 
-  // Array items (same key as parent)
+  // Array items
   if (schema.items) {
+    const arrayPath = parentPath ? `${parentPath}[]` : "[]";
+
     if (Array.isArray(schema.items)) {
       for (const item of schema.items) {
-        getMediaUriKeys(item, parentKey, result);
+        getMediaUriKeys(item, arrayPath, result);
       }
     } else {
-      getMediaUriKeys(schema.items, parentKey, result);
+      getMediaUriKeys(schema.items, arrayPath, result);
     }
   }
 
   return result;
 }
 
-export function getValuesByKeys(data: any, keys: string[]): any[] {
-  const result: any[] = [];
+export function getValuesByPaths(data: any, paths: string[]): any[] {
+  const results: any[] = [];
+  for (const path of paths) {
+    collectByPath(data, path.split("."), results);
+  }
+  return results;
+}
 
-  function traverse(obj: any) {
-    if (!obj || typeof obj !== "object") return;
+function collectByPath(data: any, path: string[], results: any[]) {
+  if (!data) return;
 
-    for (const [key, value] of Object.entries(obj)) {
-      if (keys.includes(key)) {
-        if (Array.isArray(value)) {
-          result.push(...value);
-        } else {
-          result.push(value);
-        }
-      }
+  const [head, ...tail] = path;
 
-      // Recurse deeper
-      if (typeof value === "object") {
-        traverse(value);
-      }
+  // array detection
+  const isArray = head.endsWith("[]");
+  const key = isArray ? head.slice(0, -2) : head;
+
+  if (tail.length === 0) {
+    if (isArray && Array.isArray(data[key])) {
+      results.push(...data[key]);
+    } else if (data[key] !== undefined) {
+      results.push(data[key]);
     }
+    return;
   }
 
-  traverse(data);
-  return result;
+  if (isArray && Array.isArray(data[key])) {
+    for (const item of data[key]) {
+      collectByPath(item, tail, results);
+    }
+  } else if (data[key] !== undefined) {
+    collectByPath(data[key], tail, results);
+  }
 }
 
 export function preValidateComponentPlaceholders(schema: any, path = "data") {

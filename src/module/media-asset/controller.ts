@@ -108,45 +108,34 @@ const mediaAssetController = (context: AppContext) => {
     }
   });
 
-  // router.post(
-  //   "/:id/get",
-  //   requirePermission(context, Permissions.CONTENT_COLLECTION_READ),
-  //   async (req: Request, res: Response, next: NextFunction) => {
-  //     try {
-  //       const content = await contentService.getById(req.params.id);
-  //       res.status(200).json(successResponse(content));
-  //     } catch (err) {
-  //       next(err);
-  //     }
-  //   }
-  // );
+  router.post("/:id/update", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const mediaAsset = await mediaAssetService.findOne({ _id: new ObjectId(id) });
+      if (!mediaAsset) {
+        throw new NotFoundError("media asset not found");
+      }
+      const updatedMediaAsset = await mediaAssetService.update(req.body, mediaAsset);
+      res.status(200).json(successResponse(updatedMediaAsset));
+    } catch (err) {
+      next(err);
+    }
+  });
 
-  // router.post(
-  //   "/:id/update",
-  //   requirePermission(context, Permissions.CONTENT_COLLECTION_UPDATE),
-  //   async (req: Request, res: Response, next: NextFunction) => {
-  //     try {
-  //       const updatedContent = await contentService.update(req.params.id, req.body);
-  //       res.status(200).json(successResponse(updatedContent));
-  //     } catch (err) {
-  //       await cleanupUploadedFiles(req);
-  //       next(err);
-  //     }
-  //   }
-  // );
-
-  // router.post(
-  //   "/:id/delete",
-  //   requirePermission(context, Permissions.CONTENT_COLLECTION_DELETE),
-  //   async (req: Request, res: Response, next: NextFunction) => {
-  //     try {
-  //       const deletedContent = await contentService.delete(req.params.id);
-  //       res.status(200).json(successResponse(deletedContent));
-  //     } catch (err) {
-  //       next(err);
-  //     }
-  //   }
-  // );
+  router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const mediaAsset = await mediaAssetService.findOne({ _id: new ObjectId(id) });
+      if (!mediaAsset) {
+        throw new NotFoundError("media asset not found");
+      }
+      const gcsService = new FileUploaderGCSService(context).getInstance({});
+      const deletedMediaAsset = await mediaAssetService.delete(mediaAsset, gcsService);
+      res.status(200).json(successResponse(deletedMediaAsset));
+    } catch (err) {
+      next(err);
+    }
+  });
 
   return router;
 };

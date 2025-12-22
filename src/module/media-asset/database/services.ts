@@ -1,11 +1,11 @@
 import { ObjectId, Db, Collection, FindOptions, Filter, ClientSession } from "mongodb";
 import { validateObjectId } from "../../../utils/helper.mongo";
-import { BadRequestError, NotFoundError } from "../../../utils/helper.errors";
-import { WithMetaData } from "../../../utils/helper";
+import { BadRequestError, ConflictError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
+import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import { CreateFileData, MediaAsset } from "./models";
+import { CreateFileData, MediaAsset, UpdateMediaAssetData } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Tenant } from "../../tenant/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
@@ -17,6 +17,7 @@ import { Folder } from "../../folder/database/models";
 class MediaAssetService extends BaseService {
   private db: Db;
   private collection: Collection<MediaAsset>;
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateMediaAssetData> = new Set(["parentId", "name"] as const);
   public readonly collectionName = "media-asset";
   private tenantService: TenantService;
   private folderService: FolderService;
@@ -155,6 +156,51 @@ class MediaAssetService extends BaseService {
     return assets;
   }
 
+  private async updateValidation(updateData: UpdateMediaAssetData): Promise<{ validatedData: UpdateMediaAssetData; parent: Folder | null }> {
+    const { name, parentId } = updateData;
+
+    if (!("name" in updateData) && !("parentId" in updateData)) {
+      throw new BadRequestError("No valid fields provided for update");
+    }
+
+    if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+      throw new ValidationError("name must be a non-empty string");
+    }
+
+    let parent: null | Folder = null;
+    if (parentId !== undefined) {
+      parent = await this.folderService.findOne({ _id: new ObjectId(parentId) });
+      if (!parent) {
+        throw new NotFoundError("parent not found");
+      }
+    }
+    return {
+      validatedData: updateData,
+      parent,
+    };
+  }
+
+  async update(data: UpdateMediaAssetData, mediaAsset: MediaAsset): Promise<MediaAsset> {
+    const filteredUpdateData = filterFields(data, MediaAssetService.ALLOWED_UPDATE_FIELDS);
+
+    const { validatedData } = await this.updateValidation(filteredUpdateData);
+
+    const updatingFields: Partial<MediaAsset> = {
+      ...validatedData,
+      parentId: validatedData.parentId ? new ObjectId(validatedData.parentId) : undefined,
+    };
+
+    const updatedMediaAsset = await this.collection.findOneAndUpdate(
+      { _id: mediaAsset._id },
+      { $set: updatingFields, $currentDate: { updatedAt: true } },
+      { returnDocument: "after" },
+    );
+
+    if (!updatedMediaAsset) throw new NotFoundError("Failed to update media asset");
+
+    return updatedMediaAsset;
+  }
+
   async getAll(queryOptions: QueryOptions): Promise<WithMetaData<MediaAsset>> {
     const options = {
       ...queryOptions,
@@ -176,6 +222,15 @@ class MediaAssetService extends BaseService {
 
   async findMany(filter: Filter<MediaAsset>, options?: FindOptions<MediaAsset>): Promise<MediaAsset[]> {
     return this.collection.find(filter, options).toArray();
+  }
+
+  async delete(mediaAsset: MediaAsset, fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset> {
+    await fileUploaderGCSService.deleteFilesFromGCS(mediaAsset.storageKey?.toString());
+    const deletedMediaAsset = await this.collection.findOneAndDelete({ _id: mediaAsset._id });
+
+    if (!deletedMediaAsset) throw new NotFoundError("Failed to delete media asset");
+
+    return deletedMediaAsset;
   }
 
   private async getUniqueMediaAssetNamesBatch(tenantId: ObjectId, parentId: ObjectId | null, originalNames: string[]): Promise<string[]> {

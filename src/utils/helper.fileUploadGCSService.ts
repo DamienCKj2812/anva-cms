@@ -169,6 +169,21 @@ class FileUploaderGCSService extends BaseService {
       thumbnailUrl: undefined,
     };
   }
+  public async deleteFilesFromGCS(storageKeys: string | string[]): Promise<void> {
+    const bucketName = this.context.orgBucketName || "default-bucket";
+    const bucket = this.storage.bucket(bucketName);
+
+    const keys = Array.isArray(storageKeys) ? storageKeys : [storageKeys];
+
+    if (keys.length === 0) return;
+
+    await Promise.all(
+      keys.map(async (key) => {
+        const file = bucket.file(key);
+        await file.delete();
+      }),
+    );
+  }
 
   // Multer middlewares
   public getSingleMiddleware(fieldName: string = "file") {

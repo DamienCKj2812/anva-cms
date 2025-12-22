@@ -1,15 +1,14 @@
 import { ObjectId } from "mongodb";
 
-
 export interface MediaAsset {
   _id: ObjectId;
   tenantId: ObjectId;
   parentId: ObjectId | null; // under which folder
   originalFileName: string | null; // file only (for server)
   name: string; // for client
+  storageKey: string;
 
   // File-specific fields (only for type = 'file')
-  storageKey: string | null;
   size: number;
   mimeType: string;
   url: string;
@@ -36,12 +35,7 @@ export interface CreateFileData {
   parentId: string | null;
 }
 
-export interface UpdateMediaAsset {
-  mediaType: string;
-  parentId: string;
-  name: string;
-  mimeType: string;
-  size: string;
-  storageKey: string;
-  url: string;
+export interface UpdateMediaAssetData {
+  parentId?: string;
+  name?: string;
 }

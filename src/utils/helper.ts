@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express";
 import { AppContext } from "../utils/helper.context";
 import fs from "fs/promises";
 import { format } from "date-fns";
+import sharp from "sharp";
 
 // Deep clone helper
 export function deepClone<T>(v: T): T {
@@ -241,6 +242,32 @@ export async function cleanupUploadedFiles(req: any): Promise<void> {
     await Promise.all(files.map((file) => fs.unlink(file.path).catch((err) => console.warn(`Failed to delete file '${file.path}':`, err))));
   } catch (err) {
     console.error("Error during uploaded file cleanup:", err);
+  }
+}
+
+export async function compressImage(file: Express.Multer.File, clientWidth?: number): Promise<Buffer> {
+  const buffer = await fs.readFile(file.path);
+
+  const metadata = await sharp(buffer).metadata();
+  let width = metadata.width ?? undefined;
+  if (clientWidth && clientWidth > 0) {
+    width = Math.min(clientWidth, 3840);
+  }
+
+  const pipeline = sharp(buffer).resize({ width });
+
+  switch (file.mimetype) {
+    case "image/jpeg":
+    case "image/jpg":
+      return pipeline.jpeg({ quality: 80 }).toBuffer();
+    case "image/png":
+      return pipeline.png({ compressionLevel: 9 }).toBuffer();
+    case "image/webp":
+      return pipeline.webp({ quality: 80 }).toBuffer();
+    case "image/tiff":
+      return pipeline.webp({ quality: 80 }).toBuffer();
+    default:
+      throw new Error(`Unsupported image type: ${file.mimetype}`);
   }
 }
 

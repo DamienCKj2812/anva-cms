@@ -2,16 +2,14 @@ import { ObjectId } from "mongodb";
 
 export interface MediaAsset {
   _id: ObjectId;
+  mediaId: string; // hash / UUID for public reference
   tenantId: ObjectId;
-  parentId: ObjectId | null; // under which folder
+  folderId: ObjectId | null; // under which folder
   originalFileName: string | null; // file only (for server)
+  filePath: string;
   name: string; // for client
-  storageKey: string;
-
-  // File-specific fields (only for type = 'file')
   size: number;
   mimeType: string;
-  url: string;
 
   // Image-specific fields (only for images)
   width: number | null;
@@ -30,12 +28,7 @@ export interface MediaAsset {
   updatedAt: Date | null;
 }
 
-export interface CreateFileData {
-  tenantId: string;
-  parentId: string | null;
-}
-
 export interface UpdateMediaAssetData {
-  parentId?: string;
+  folderId?: string;
   name?: string;
 }

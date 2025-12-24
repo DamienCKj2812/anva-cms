@@ -4,7 +4,6 @@ export interface User {
   _id: ObjectId;
   username: string;
   password: string;
-  orgBucketName: string | null;
   createdAt?: Date;
   updatedAt?: Date | null;
 }

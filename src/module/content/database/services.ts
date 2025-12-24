@@ -54,6 +54,7 @@ class ContentService extends BaseService {
 
   private async createValidation(createData: CreateContentData, contentCollection: ContentCollection, fullSchema: any): Promise<CreateContentData> {
     const { status, data } = createData;
+    console.log({ data });
     if (!("status" in createData)) {
       throw new ValidationError('"status" field is required');
     }
@@ -238,11 +239,11 @@ class ContentService extends BaseService {
         .getCollection()
         .find({
           tenantId: tenantId,
-          url: { $in: mediaUris },
+          filePath: { $in: mediaUris },
         })
-        .project({ url: 1 })
+        .project({ filePath: 1 })
         .toArray();
-      const existingUrls = new Set(mediaAssets.map((a) => a.url));
+      const existingUrls = new Set(mediaAssets.map((a) => a.filePath));
       const missingUris = mediaUris.filter((uri) => !existingUrls.has(uri));
       if (missingUris.length > 0) {
         throw new ValidationError(`You must use media that exists in your media assets. Missing: ${missingUris.join(", ")}`);

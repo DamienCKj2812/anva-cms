@@ -34,7 +34,6 @@ class UserService extends BaseService {
         _id: new ObjectId(),
         username: configs.DEFAULT_ADMIN_ACCOUNT_USERNAME,
         password: await hashPassword(configs.DEFAULT_DEVELOPER_ACCOUNT_PASSWORD),
-        orgBucketName: "",
         createdAt: new Date(),
         updatedAt: null,
       };
@@ -94,7 +93,6 @@ class UserService extends BaseService {
     const newUser: User = {
       _id: new ObjectId(),
       username: username.trim(),
-      orgBucketName: "",
       createdAt: new Date(),
       updatedAt: null,
       password: await hashPassword(password),

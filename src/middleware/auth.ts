@@ -42,7 +42,6 @@ export function authenticate(context: AppContext) {
 
       if (context) {
         context.currentUser = currentUser;
-        context.orgBucketName = user.orgBucketName;
       }
 
       next();

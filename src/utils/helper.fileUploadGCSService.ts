@@ -2,7 +2,6 @@ import multer, { Multer } from "multer";
 import { Storage } from "@google-cloud/storage";
 import path from "path";
 import { AppContext } from "./helper.context";
-import configs from "../configs";
 import { BaseService } from "../module/core/base-service";
 import { BadRequestError } from "./helper.errors";
 import sharp from "sharp";
@@ -16,7 +15,6 @@ export interface FileUploadGCSConfig {
 class FileUploaderGCSService extends BaseService {
   private config: FileUploadGCSConfig;
   private storage: Storage;
-  private bucket;
   public upload: Multer;
 
   constructor(context: AppContext) {
@@ -28,14 +26,14 @@ class FileUploaderGCSService extends BaseService {
     maxFileSize,
     maxFiles,
   }: {
-    allowedMimeTypes?: string[];
-    maxFileSize?: number;
-    maxFiles?: number;
+    allowedMimeTypes: string[];
+    maxFileSize: number;
+    maxFiles: number;
   }): FileUploaderGCSService {
     this.config = {
-      allowedMimeTypes: allowedMimeTypes || configs.GCLOUD_CONFIGS.ALLOWED_MIME_TYPES,
-      maxFileSize: maxFileSize || configs.GCLOUD_CONFIGS.MAX_FILE_SIZE,
-      maxFiles: maxFiles || configs.GCLOUD_CONFIGS.MAX_FILES,
+      allowedMimeTypes: allowedMimeTypes,
+      maxFileSize: maxFileSize,
+      maxFiles: maxFiles,
     };
     this.storage = new Storage({
       keyFilename: path.join(__dirname, "../../gcloud-service-account.json"),
@@ -92,7 +90,7 @@ class FileUploaderGCSService extends BaseService {
     const width = metadata.width ?? 0;
     const height = metadata.height ?? 0;
 
-    const bucketName = this.context.orgBucketName || configs.GCLOUD_CONFIGS.GCLOUD_DEFAULT_BUCKET;
+    const bucketName = ""; // Not using for now
     const bucket = this.storage.bucket(bucketName);
 
     // Use the unique targetName, change extension to .webp
@@ -140,7 +138,7 @@ class FileUploaderGCSService extends BaseService {
       throw new BadRequestError(`${file.originalname} is not a video`);
     }
 
-    const bucketName = this.context.orgBucketName || configs.GCLOUD_CONFIGS.GCLOUD_DEFAULT_BUCKET;
+    const bucketName = ""; // Not using for now
     const bucket = this.storage.bucket(bucketName);
 
     const storageKey = this.getStorageKey(targetName);
@@ -170,7 +168,7 @@ class FileUploaderGCSService extends BaseService {
     };
   }
   public async deleteFilesFromGCS(storageKeys: string | string[]): Promise<void> {
-    const bucketName = this.context.orgBucketName || "default-bucket";
+    const bucketName = "";
     const bucket = this.storage.bucket(bucketName);
 
     const keys = Array.isArray(storageKeys) ? storageKeys : [storageKeys];
@@ -204,29 +202,6 @@ class FileUploaderGCSService extends BaseService {
 
   public getStorageKey(name: string): string {
     return `${this.getFolderPrefix(this.context)}/${name}`;
-  }
-
-  async compressImage(file: Express.Multer.File, clientWidth?: number): Promise<Buffer> {
-    const metadata = await sharp(file.buffer).metadata();
-
-    let width = metadata.width ?? undefined;
-    if (clientWidth && clientWidth > 0) {
-      width = Math.min(clientWidth, 3840);
-    }
-
-    const pipeline = sharp(file.buffer).resize({ width });
-
-    switch (file.mimetype) {
-      case "image/jpeg":
-      case "image/jpg":
-        return pipeline.jpeg({ quality: 80 }).toBuffer();
-      case "image/png":
-        return pipeline.png({ compressionLevel: 9 }).toBuffer();
-      case "image/webp":
-        return pipeline.webp({ quality: 80 }).toBuffer();
-      default:
-        throw new Error(`Unsupported image type: ${file.mimetype}`);
-    }
   }
 }
 

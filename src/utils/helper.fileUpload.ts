@@ -1,6 +1,7 @@
 import multer, { Multer, StorageEngine } from "multer";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 interface FileUploadConfig {
   allowedMimeTypes: string[];
@@ -42,14 +43,26 @@ class FileUploader {
     return newName;
   }
 
+  private generateHashedFilename(originalName: string): string {
+    const ext = path.extname(originalName);
+    const hash = crypto.randomBytes(16).toString("hex"); // 32-char random hash
+    return `${hash}${ext}`;
+  }
+
   private configureMulter(): Multer {
     const storage: StorageEngine = multer.diskStorage({
       destination: (req, file, cb) => {
         cb(null, this.config.uploadDirectory);
       },
       filename: (req, file, cb) => {
-        const uniqueName = this.generateUniqueFilename(this.config.uploadDirectory, file.originalname);
-        cb(null, uniqueName);
+        const hashedName = this.generateHashedFilename(file.originalname);
+        const fullPath = path.join(this.config.uploadDirectory, hashedName);
+        const normalizedPath = this.normalizePath(fullPath);
+
+        file.path = normalizedPath;
+        file.filename = hashedName;
+
+        cb(null, hashedName);
       },
     });
 

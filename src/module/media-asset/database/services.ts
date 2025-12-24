@@ -1,23 +1,23 @@
 import { ObjectId, Db, Collection, FindOptions, Filter, ClientSession } from "mongodb";
 import { validateObjectId } from "../../../utils/helper.mongo";
-import { BadRequestError, ConflictError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
+import { BadRequestError, NotFoundError, ValidationError } from "../../../utils/helper.errors";
 import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import { CreateFileData, MediaAsset, UpdateMediaAssetData } from "./models";
+import { MediaAsset, UpdateMediaAssetData } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Tenant } from "../../tenant/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
-import FileUploaderGCSService from "../../../utils/helper.fileUploadGCSService";
 import path from "path";
 import FolderService from "../../folder/database/services";
 import { Folder } from "../../folder/database/models";
+import sharp from "sharp";
 
 class MediaAssetService extends BaseService {
   private db: Db;
   private collection: Collection<MediaAsset>;
-  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateMediaAssetData> = new Set(["parentId", "name"] as const);
+  private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateMediaAssetData> = new Set(["folderId", "name"] as const);
   public readonly collectionName = "media-asset";
   private tenantService: TenantService;
   private folderService: FolderService;
@@ -31,135 +31,137 @@ class MediaAssetService extends BaseService {
   async init() {
     this.tenantService = this.getService("TenantService");
     this.folderService = this.getService("FolderService");
-    await this.collection.createIndex({ tenantId: 1, parentId: 1, name: 1 });
+    await this.collection.createIndex({ tenantId: 1, folderId: 1, name: 1 });
   }
 
   getCollection(): Collection<MediaAsset> {
     return this.collection;
   }
 
-  private async createFileValidation(data: CreateFileData): Promise<{ validatedData: CreateFileData; tenant: Tenant; parent: Folder | null }> {
-    const { tenantId, parentId } = data;
-    if (!tenantId) {
-      throw new BadRequestError('"tenantId" field is required');
-    }
-    const tenant = await this.tenantService.getById(tenantId);
-    if (!tenant) {
-      throw new NotFoundError("tenant not found");
-    }
-    let parent: null | Folder = null;
-    if (parentId) {
-      parent = await this.folderService.findOne({ _id: new ObjectId(parentId) });
-      if (!parent) {
-        throw new NotFoundError("parent not found");
-      }
-    }
-    return {
-      tenant,
-      validatedData: data,
-      parent,
-    };
-  }
-
-  async createImages(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset[]> {
-    if (!files || files.length === 0) {
-      throw new BadRequestError("No files provided");
-    }
-
-    const { validatedData, tenant, parent } = await this.createFileValidation(data);
+  async createImages(files: Express.Multer.File[], tenant: Tenant, folder?: Folder): Promise<MediaAsset[]> {
     const userId = getCurrentUserId(this.context);
 
-    const names = await this.getUniqueMediaAssetNamesBatch(
-      tenant._id!,
-      parent?._id ?? null,
-      files.map((f) => f.originalname),
+    const assets: MediaAsset[] = await Promise.all(
+      files.map(async (file) => {
+        let width: number | null = null;
+        let height: number | null = null;
+
+        const metadata = await sharp(file.path).metadata();
+        width = metadata.width ?? null;
+        height = metadata.height ?? null;
+
+        const ext = path.extname(file.filename);
+        const mediaId = path.basename(file.filename, ext);
+
+        const originalBaseName = path.basename(file.originalname ?? "Unnamed", path.extname(file.originalname ?? ""));
+        const fileName = `${originalBaseName}.webp`;
+
+        return {
+          _id: new ObjectId(),
+          mediaId,
+          tenantId: tenant._id,
+          folderId: folder?._id ?? null,
+          originalFileName: fileName,
+          filePath: file.path,
+          name: fileName,
+          size: file.size,
+          mimeType: "image/webp",
+          width,
+          height,
+          duration: null,
+          thumbnailUrl: null,
+          metadata: {},
+          createdBy: userId,
+          createdAt: new Date(),
+          updatedAt: null,
+        };
+      }),
     );
 
-    const uploads = await Promise.all(files.map((file, i) => fileUploaderGCSService.uploadImageToGCS(file, names[i])));
+    const result = await this.collection.insertMany(assets);
 
-    const assets: MediaAsset[] = files.map((file, i) => {
-      if (!file.mimetype.startsWith("image/")) {
-        throw new BadRequestError(`Invalid file type: ${file.originalname} is not an image`);
-      }
+    return assets.map((asset, i) => ({
+      ...asset,
+      _id: result.insertedIds[i],
+    }));
+  }
+
+  async createApplications(files: Express.Multer.File[], tenant: Tenant, folder?: Folder): Promise<MediaAsset[]> {
+    const userId = getCurrentUserId(this.context);
+
+    const assets: MediaAsset[] = files.map((file) => {
+      const ext = path.extname(file.filename);
+      const mediaId = path.basename(file.filename, ext);
 
       return {
         _id: new ObjectId(),
+        mediaId,
         tenantId: tenant._id,
-        originalFileName: uploads[i].name,
-        name: uploads[i].name,
-        parentId: parent?._id ?? null,
-        storageKey: uploads[i].storageKey,
-        size: uploads[i].size,
-        mimeType: uploads[i].mimetype,
-        url: uploads[i].url,
-        width: uploads[i].width,
-        height: uploads[i].height,
+        folderId: folder?._id ?? null,
+        originalFileName: file.originalname ?? null,
+        filePath: file.path,
+        name: file.originalname,
+        size: file.size,
+        mimeType: file.mimetype,
+        width: null,
+        height: null,
         duration: null,
         thumbnailUrl: null,
-        metadata: null,
+        metadata: {},
         createdBy: userId,
         createdAt: new Date(),
         updatedAt: null,
       };
     });
 
-    await this.collection.insertMany(assets);
+    const result = await this.collection.insertMany(assets);
 
-    return assets;
+    return assets.map((asset, i) => ({
+      ...asset,
+      _id: result.insertedIds[i],
+    }));
   }
 
-  async createVideos(data: CreateFileData, files: Express.Multer.File[], fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset[]> {
-    if (!files || files.length === 0) {
-      throw new BadRequestError("No files provided");
-    }
-
-    const { validatedData, tenant, parent } = await this.createFileValidation(data);
+  async createVideos(files: Express.Multer.File[], tenant: Tenant, folder?: Folder): Promise<MediaAsset[]> {
     const userId = getCurrentUserId(this.context);
 
-    const names = await this.getUniqueMediaAssetNamesBatch(
-      tenant._id!,
-      parent?._id ?? null,
-      files.map((f) => f.originalname),
-    );
-
-    const uploads = await Promise.all(files.map((file, i) => fileUploaderGCSService.uploadVideoToGCS(file, names[i])));
-
-    const assets: MediaAsset[] = files.map((file, i) => {
-      if (!file.mimetype.startsWith("video/")) {
-        throw new BadRequestError(`Invalid file type: ${file.originalname} is not a video`);
-      }
+    const assets: MediaAsset[] = files.map((file) => {
+      const ext = path.extname(file.originalname);
+      const mediaId = path.basename(file.filename, ext);
 
       return {
         _id: new ObjectId(),
-        tenantId: tenant._id!,
-        originalFileName: uploads[i].name,
-        name: uploads[i].name,
-        parentId: parent?._id ?? null,
-        storageKey: uploads[i].storageKey,
-        size: uploads[i].size,
-        mimeType: uploads[i].mimetype,
-        url: uploads[i].url,
-        width: uploads[i].width ?? null,
-        height: uploads[i].height ?? null,
-        duration: uploads[i].duration ?? null,
-        thumbnailUrl: uploads[i].thumbnailUrl ?? null,
-        metadata: null,
+        mediaId,
+        tenantId: tenant._id,
+        folderId: folder?._id ?? null,
+        originalFileName: file.originalname ?? null,
+        filePath: file.path,
+        name: file.originalname ?? "Unnamed",
+        size: file.size,
+        mimeType: file.mimetype,
+        width: null,
+        height: null,
+        duration: null,
+        thumbnailUrl: null,
+        metadata: {},
         createdBy: userId,
         createdAt: new Date(),
         updatedAt: null,
       };
     });
 
-    // 5️⃣ Insert all assets in one go
-    await this.collection.insertMany(assets);
+    const result = await this.collection.insertMany(assets);
 
-    return assets;
+    return assets.map((asset, i) => ({
+      ...asset,
+      _id: result.insertedIds[i],
+    }));
   }
 
-  private async updateValidation(updateData: UpdateMediaAssetData): Promise<{ validatedData: UpdateMediaAssetData; parent: Folder | null }> {
-    const { name, parentId } = updateData;
+  private async updateValidation(updateData: UpdateMediaAssetData): Promise<{ validatedData: UpdateMediaAssetData; folder: Folder | null }> {
+    const { name, folderId } = updateData;
 
-    if (!("name" in updateData) && !("parentId" in updateData)) {
+    if (!("name" in updateData) && !("folderId" in updateData)) {
       throw new BadRequestError("No valid fields provided for update");
     }
 
@@ -167,16 +169,16 @@ class MediaAssetService extends BaseService {
       throw new ValidationError("name must be a non-empty string");
     }
 
-    let parent: null | Folder = null;
-    if (parentId !== undefined) {
-      parent = await this.folderService.findOne({ _id: new ObjectId(parentId) });
-      if (!parent) {
-        throw new NotFoundError("parent not found");
+    let folder: null | Folder = null;
+    if (folderId !== undefined) {
+      folder = await this.folderService.findOne({ _id: new ObjectId(folderId) });
+      if (!folder) {
+        throw new NotFoundError("folder not found");
       }
     }
     return {
       validatedData: updateData,
-      parent,
+      folder,
     };
   }
 
@@ -187,7 +189,7 @@ class MediaAssetService extends BaseService {
 
     const updatingFields: Partial<MediaAsset> = {
       ...validatedData,
-      parentId: validatedData.parentId ? new ObjectId(validatedData.parentId) : undefined,
+      folderId: validatedData.folderId ? new ObjectId(validatedData.folderId) : undefined,
     };
 
     const updatedMediaAsset = await this.collection.findOneAndUpdate(
@@ -224,66 +226,11 @@ class MediaAssetService extends BaseService {
     return this.collection.find(filter, options).toArray();
   }
 
-  async delete(mediaAsset: MediaAsset, fileUploaderGCSService: FileUploaderGCSService): Promise<MediaAsset> {
-    await fileUploaderGCSService.deleteFilesFromGCS(mediaAsset.storageKey?.toString());
+  async delete(mediaAsset: MediaAsset): Promise<MediaAsset> {
     const deletedMediaAsset = await this.collection.findOneAndDelete({ _id: mediaAsset._id });
-
     if (!deletedMediaAsset) throw new NotFoundError("Failed to delete media asset");
 
     return deletedMediaAsset;
-  }
-
-  private async getUniqueMediaAssetNamesBatch(tenantId: ObjectId, parentId: ObjectId | null, originalNames: string[]): Promise<string[]> {
-    // Step 1: Get all existing files in DB that might conflict
-    const regexes = originalNames.map((name) => {
-      const ext = path.extname(name);
-      const base = path.basename(name, ext);
-      return new RegExp(`^${base}(\\(\\d+\\))?${ext}$`);
-    });
-
-    const existingFiles = await this.collection
-      .find(
-        {
-          tenantId,
-          parentId,
-          $or: regexes.map((r) => ({ name: { $regex: r } })),
-        },
-        { projection: { name: 1 } },
-      )
-      .toArray();
-
-    // Step 2: Track used numbers per base name
-    const usedNumbersMap = new Map<string, Set<number>>();
-    for (const file of existingFiles) {
-      const ext = path.extname(file.name);
-      const base = path.basename(file.name, ext).replace(/\(\d+\)$/, "");
-      const match = file.name.match(/\((\d+)\)\.[^.]+$/);
-      const set = usedNumbersMap.get(base) || new Set<number>();
-      set.add(match ? parseInt(match[1], 10) : 0);
-      usedNumbersMap.set(base, set);
-    }
-
-    // Step 3: Assign unique names for this batch
-    const resultNames: string[] = [];
-    const batchUsedNumbers = new Map<string, Set<number>>(); // track names in this batch
-
-    for (const originalName of originalNames) {
-      const ext = path.extname(originalName);
-      const base = path.basename(originalName, ext);
-
-      const usedNumbers = new Set<number>(usedNumbersMap.get(base) || []);
-      const batchSet = batchUsedNumbers.get(base) || new Set<number>();
-      let counter = 0;
-      while (usedNumbers.has(counter) || batchSet.has(counter)) {
-        counter++;
-      }
-      batchSet.add(counter);
-      batchUsedNumbers.set(base, batchSet);
-
-      resultNames.push(counter === 0 ? `${base}${ext}` : `${base}(${counter})${ext}`);
-    }
-
-    return resultNames;
   }
 }
 

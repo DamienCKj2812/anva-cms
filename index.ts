@@ -16,8 +16,10 @@ app.use(express.json());
 app.use(cookieParser());
 const server = http.createServer(app);
 
-const assetsPath = path.join(__dirname, "assets");
-app.use("/assets", express.static(assetsPath));
+const assetsPath = path.join(__dirname, "uploads", "media");
+app.use("/uploads/media", express.static(assetsPath));
+
+app.use("/", express.static(assetsPath));
 
 export const allowedOrigins = ["http://localhost:3000", "http://localhost:3001"]; // frontend URL
 app.use(

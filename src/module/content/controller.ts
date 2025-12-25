@@ -88,7 +88,7 @@ const contentController = (context: AppContext) => {
             });
 
       // 5. Detect missing translation
-      const localeNotFound = !contentTranslation.some((t) => t && Object.keys(t.data || {}).length > 0);
+      const localeNotFound = !contentTranslation.some((t) => t != null);
 
       // 6. IMPORTANT: schema MUST be OBJECT schema (not array)
       const fullSchema = await attributeService.getValidationSchema(contentCollection);

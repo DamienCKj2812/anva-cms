@@ -231,6 +231,20 @@ const mediaAssetController = (context: AppContext) => {
     }
   });
 
+  router.post("/:id/update-focus", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const mediaAsset = await mediaAssetService.findOne({ _id: new ObjectId(id) });
+      if (!mediaAsset) {
+        throw new NotFoundError("media asset not found");
+      }
+      const updatedMediaAsset = await mediaAssetService.updateFocusPoint(req.body, mediaAsset);
+      res.status(200).json(successResponse(updatedMediaAsset));
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post("/:id/delete", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;

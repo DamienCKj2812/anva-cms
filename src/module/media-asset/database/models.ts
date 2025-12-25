@@ -2,20 +2,22 @@ import { ObjectId } from "mongodb";
 
 export interface MediaAsset {
   _id: ObjectId;
-  mediaId: string; // hash / UUID for public reference
+  mediaId: string;
   tenantId: ObjectId;
-  folderId: ObjectId | null; // under which folder
-  originalFileName: string | null; // file only (for server)
+  folderId: ObjectId | null;
+  originalFileName: string | null;
   filePath: string;
-  name: string; // for client
+  name: string;
   size: number;
   mimeType: string;
 
-  // Image-specific fields (only for images)
+  // Image-specific fields
   width: number | null;
   height: number | null;
+  focusX?: number;
+  focusY?: number;
 
-  // Video/audio-specific fields (optional)
+  // Video/audio-specific fields
   duration: number | null;
   thumbnailUrl: string | null;
 
@@ -31,4 +33,9 @@ export interface MediaAsset {
 export interface UpdateMediaAssetData {
   folderId?: string;
   name?: string;
+}
+
+export interface UpdateMediaAssetFocusPointData {
+  focusX?: number;
+  focusY?: number;
 }

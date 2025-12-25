@@ -5,7 +5,7 @@ import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import { MediaAsset, UpdateMediaAssetData } from "./models";
+import { MediaAsset, UpdateMediaAssetData, UpdateMediaAssetFocusPointData } from "./models";
 import TenantService from "../../tenant/database/services";
 import { Tenant } from "../../tenant/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
@@ -18,6 +18,10 @@ class MediaAssetService extends BaseService {
   private db: Db;
   private collection: Collection<MediaAsset>;
   private static readonly ALLOWED_UPDATE_FIELDS: ReadonlySet<keyof UpdateMediaAssetData> = new Set(["folderId", "name"] as const);
+  private static readonly ALLOWED_UPDATE_FOCUS_POINT_FIELDS: ReadonlySet<keyof UpdateMediaAssetFocusPointData> = new Set([
+    "focusX",
+    "focusY",
+  ] as const);
   public readonly collectionName = "media-asset";
   private tenantService: TenantService;
   private folderService: FolderService;
@@ -68,6 +72,8 @@ class MediaAssetService extends BaseService {
           mimeType: "image/webp",
           width,
           height,
+          focusX: 50,
+          focusY: 50,
           duration: null,
           thumbnailUrl: null,
           metadata: {},
@@ -158,7 +164,10 @@ class MediaAssetService extends BaseService {
     }));
   }
 
-  private async updateValidation(updateData: UpdateMediaAssetData): Promise<{ validatedData: UpdateMediaAssetData; folder: Folder | null }> {
+  private async updateValidation(
+    updateData: UpdateMediaAssetData,
+    mediaAsset: MediaAsset,
+  ): Promise<{ validatedData: UpdateMediaAssetData; folder: Folder | null }> {
     const { name, folderId } = updateData;
 
     if (!("name" in updateData) && !("folderId" in updateData)) {
@@ -176,6 +185,7 @@ class MediaAssetService extends BaseService {
         throw new NotFoundError("folder not found");
       }
     }
+
     return {
       validatedData: updateData,
       folder,
@@ -185,11 +195,57 @@ class MediaAssetService extends BaseService {
   async update(data: UpdateMediaAssetData, mediaAsset: MediaAsset): Promise<MediaAsset> {
     const filteredUpdateData = filterFields(data, MediaAssetService.ALLOWED_UPDATE_FIELDS);
 
-    const { validatedData } = await this.updateValidation(filteredUpdateData);
+    const { validatedData } = await this.updateValidation(filteredUpdateData, mediaAsset);
 
     const updatingFields: Partial<MediaAsset> = {
       ...validatedData,
       folderId: validatedData.folderId ? new ObjectId(validatedData.folderId) : undefined,
+    };
+
+    const updatedMediaAsset = await this.collection.findOneAndUpdate(
+      { _id: mediaAsset._id },
+      { $set: updatingFields, $currentDate: { updatedAt: true } },
+      { returnDocument: "after" },
+    );
+
+    if (!updatedMediaAsset) throw new NotFoundError("Failed to update media asset");
+
+    return updatedMediaAsset;
+  }
+
+  private async updateFocusPointValidation(
+    updateData: UpdateMediaAssetFocusPointData,
+    mediaAsset: MediaAsset,
+  ): Promise<UpdateMediaAssetFocusPointData> {
+    const { focusX, focusY } = updateData;
+
+    if (!("focusX" in updateData) && !("focusY" in updateData)) {
+      throw new BadRequestError("No valid fields provided for update");
+    }
+    if (!mediaAsset.mimeType.startsWith("image")) {
+      throw new BadRequestError("Only image type can update its focus point");
+    }
+
+    if (focusX !== undefined) {
+      if (typeof focusX !== "number" || !Number.isFinite(focusX)) throw new ValidationError("focusX must be a finite number");
+      if (focusX < 0 || focusX > 100) throw new ValidationError("focusX must be between 0 and 100");
+    }
+
+    if (focusY !== undefined) {
+      if (typeof focusY !== "number" || !Number.isFinite(focusY)) throw new ValidationError("focusY must be a finite number");
+      if (focusY < 0 || focusY > 100) throw new ValidationError("focusY must be between 0 and 100");
+    }
+
+    return updateData;
+  }
+
+  async updateFocusPoint(data: UpdateMediaAssetFocusPointData, mediaAsset: MediaAsset): Promise<MediaAsset> {
+    const filteredUpdateData = filterFields(data, MediaAssetService.ALLOWED_UPDATE_FOCUS_POINT_FIELDS);
+
+    const validatedData = await this.updateFocusPointValidation(filteredUpdateData, mediaAsset);
+
+    const updatingFields: Partial<MediaAsset> = {
+      ...validatedData,
     };
 
     const updatedMediaAsset = await this.collection.findOneAndUpdate(

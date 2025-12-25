@@ -232,6 +232,96 @@ class MediaAssetService extends BaseService {
 
     return deletedMediaAsset;
   }
+
+  async populateMediaAsset(schema: any, rawData: any) {
+    console.dir({ schema }, { depth: null });
+    console.dir({ rawData }, { depth: null });
+    const mediaIds = this.collectMediaIds(schema, rawData);
+    console.log(mediaIds);
+
+    if (mediaIds.size === 0) {
+      return rawData;
+    }
+
+    const mediaDocs = await this.collection.find({ _id: { $in: [...mediaIds].map((id) => new ObjectId(id)) } }).toArray();
+    console.log({ mediaIds });
+    console.log({ mediaDocs });
+
+    const mediaMap = new Map(mediaDocs.map((m) => [m._id.toString(), m]));
+
+    return this.populateMediaArrays(schema, rawData, mediaMap);
+  }
+
+  private collectMediaIds(schema: any, data: any, ids = new Set<string>()) {
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        this.collectMediaIds(schema, item, ids);
+      }
+      return ids;
+    }
+
+    for (const [key, fieldSchema] of Object.entries(schema.properties || {}) as [string, any][]) {
+      const value = data[key];
+      if (!value) continue;
+
+      //  Single media
+      if (fieldSchema.type === "string" && fieldSchema.format === "media-uri") {
+        ids.add(value);
+      }
+
+      //  Media array
+      else if (fieldSchema.type === "array" && fieldSchema.items?.format === "media-uri" && Array.isArray(value)) {
+        value.forEach((id: any) => ids.add(id));
+      }
+
+      //  Nested object / component
+      else if (fieldSchema.type === "object") {
+        this.collectMediaIds(fieldSchema, value, ids);
+      }
+
+      //  Repeatable component
+      else if (fieldSchema.type === "array" && fieldSchema.items?.type === "object" && Array.isArray(value)) {
+        value.forEach((v: any) => this.collectMediaIds(fieldSchema.items, v, ids));
+      }
+    }
+
+    return ids;
+  }
+
+  private async populateMediaArrays(schema: any, data: any, mediaMap: Map<string, any>): Promise<any> {
+    if (Array.isArray(data)) {
+      return Promise.all(data.map((item) => this.populateMediaArrays(schema, item, mediaMap)));
+    }
+
+    const result = { ...data };
+
+    for (const [fieldKey, fieldSchema] of Object.entries(schema.properties || {}) as [string, any][]) {
+      const value = data[fieldKey];
+      if (!value) continue;
+
+      //  Single media
+      if (fieldSchema.type === "string" && fieldSchema.format === "media-uri") {
+        result[fieldKey] = mediaMap.get(value) || value;
+      }
+
+      //  Media array
+      else if (fieldSchema.type === "array" && fieldSchema.items?.format === "media-uri" && Array.isArray(value)) {
+        result[fieldKey] = value.map((id: any) => mediaMap.get(id) || id);
+      }
+
+      // Object / component
+      else if (fieldSchema.type === "object") {
+        result[fieldKey] = await this.populateMediaArrays(fieldSchema, value, mediaMap);
+      }
+
+      // Repeatable component
+      else if (fieldSchema.type === "array" && fieldSchema.items?.type === "object" && Array.isArray(value)) {
+        result[fieldKey] = await Promise.all(value.map((v: any) => this.populateMediaArrays(fieldSchema.items, v, mediaMap)));
+      }
+    }
+
+    return result;
+  }
 }
 
 export default MediaAssetService;

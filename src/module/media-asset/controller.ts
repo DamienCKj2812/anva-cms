@@ -135,7 +135,7 @@ const mediaAssetController = (context: AppContext) => {
     }
   });
 
-  router.post("/:tenantId/upload-application", async (req: Request, res: Response, next: NextFunction) => {
+  router.post("/:tenantId/upload-applications", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { tenantId } = req.params;
       const { folderId } = req.body;
@@ -151,7 +151,7 @@ const mediaAssetController = (context: AppContext) => {
 
       const uploader = new FileUploader({
         allowedMimeTypes: ["application/pdf"],
-        maxFileSize: 50 * 1024 * 1024, // 50MB
+        maxFileSize: 500 * 1024 * 1024,
         uploadDirectory: `uploads/media/${userId}/${tenant._id}`,
       });
 

@@ -1,7 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { errorResponse, successResponse } from "../../utils/helper.response";
+import { successResponse } from "../../utils/helper.response";
 import { AppContext } from "../../utils/helper.context";
-import { NotFoundError } from "../../utils/helper.errors";
 import { ContentCollectionTypeEnum } from "../../module/content-collection/database/models";
 import { mergeTranslatableFields } from "../../utils/helper.ajv";
 import { Content } from "../../module/content/database/models";
@@ -13,6 +12,7 @@ const publicContentController = (context: AppContext) => {
   const contentTranslationService = context.diContainer!.get("ContentTranslationService");
   const attributeService = context.diContainer!.get("AttributeService");
   const tenantLocaleService = context.diContainer!.get("TenantLocaleService");
+  const mediaAssetService = context.diContainer!.get("MediaAssetService");
 
   router.get("/:slug/get-all", async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -61,8 +61,10 @@ const publicContentController = (context: AppContext) => {
         ),
       );
 
+      const populatedData = await mediaAssetService.populateMediaAsset(fullSchema, mergedData);
+
       // 8. Return merged content
-      return res.json(successResponse(mergedData));
+      return res.json(successResponse(populatedData));
     } catch (err) {
       next(err);
     }
@@ -72,4 +74,3 @@ const publicContentController = (context: AppContext) => {
 };
 
 export default publicContentController;
-

@@ -239,11 +239,11 @@ class ContentService extends BaseService {
         .getCollection()
         .find({
           tenantId: tenantId,
-          filePath: { $in: mediaUris },
+          _id: { $in: mediaUris.map((m) => new ObjectId(m)) },
         })
-        .project({ filePath: 1 })
+        .project({ _id: 1 })
         .toArray();
-      const existingUrls = new Set(mediaAssets.map((a) => a.filePath));
+      const existingUrls = new Set(mediaAssets.map((a) => a._id.toString()));
       const missingUris = mediaUris.filter((uri) => !existingUrls.has(uri));
       if (missingUris.length > 0) {
         throw new ValidationError(`You must use media that exists in your media assets. Missing: ${missingUris.join(", ")}`);

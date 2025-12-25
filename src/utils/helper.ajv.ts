@@ -27,9 +27,7 @@ ajv.addKeyword({
 
 ajv.addFormat("media-uri", {
   type: "string",
-  validate: (value: string) => {
-    return typeof value === "string" && (value.startsWith("uploads/") || value.startsWith("http://") || value.startsWith("https://"));
-  },
+  validate: (value: string) => /^[a-f\d]{24}$/i.test(value),
 });
 
 export default ajv;

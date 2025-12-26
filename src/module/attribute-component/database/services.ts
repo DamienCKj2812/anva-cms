@@ -281,7 +281,7 @@ class AttributeComponentService extends BaseService {
     }
 
     if (enumValues !== undefined) {
-      this.attributeService.validateEnumValue(enumValues);
+      this.attributeService.validateEnumValue(enumValues, attributeType, attributeFormat, repeatable, validation, defaultValue);
     }
 
     if (validation !== undefined) {
@@ -376,7 +376,17 @@ class AttributeComponentService extends BaseService {
     }
 
     if (enumValues !== undefined) {
-      this.attributeService.validateEnumValue(enumValues);
+      if (!attribute.attributeType) {
+        throw new ValidationError("attribute must have attributeType when adding enum");
+      }
+      this.attributeService.validateEnumValue(
+        enumValues,
+        attributeType || attribute.attributeType,
+        attributeFormat,
+        repeatable,
+        validation,
+        defaultValue,
+      );
     }
 
     if (validation !== undefined) {

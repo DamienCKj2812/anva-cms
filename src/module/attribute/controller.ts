@@ -1,10 +1,9 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { successResponse } from "../../utils/helper.response";
-import { ForbiddenError, NotFoundError } from "../../utils/helper.errors";
+import { NotFoundError } from "../../utils/helper.errors";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
-import { validateObjectId } from "../../utils/helper.mongo";
 import { ObjectId } from "mongodb";
 import { getCurrentUserId } from "../../utils/helper.auth";
 

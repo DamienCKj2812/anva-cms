@@ -142,7 +142,7 @@ class AttributeService extends BaseService {
     }
 
     if (enumValues !== undefined) {
-      this.validateEnumValue(enumValues, attributeType, attributeFormat, repeatable, validation, defaultValue);
+      this.validateEnumValue(enumValues, attributeType, repeatable, validation, defaultValue);
     }
 
     if (validation !== undefined) {
@@ -240,10 +240,7 @@ class AttributeService extends BaseService {
     }
 
     if (enumValues !== undefined) {
-      if (!attribute.attributeType) {
-        throw new ValidationError("attribute must have attributeType when adding enum");
-      }
-      this.validateEnumValue(enumValues, attributeType || attribute.attributeType, attributeFormat, repeatable, validation, defaultValue);
+      this.validateEnumValue(enumValues);
     }
 
     if (validation !== undefined) {
@@ -574,10 +571,9 @@ class AttributeService extends BaseService {
   public validateEnumValue(
     enumValues: string[],
     attributeType: AttributeTypeEnum,
-    attributeFormat?: AttributeFormatEnum,
-    repeatable?: boolean,
-    validation?: ValidationRules,
-    defaultValue?: string,
+    repeatable: boolean | null,
+    validation: ValidationRules | null,
+    defaultValue: string | null,
   ) {
     if (!Array.isArray(enumValues) || enumValues.length === 0) {
       throw new ValidationError("enumValues must be a non-empty array of strings");
@@ -585,19 +581,16 @@ class AttributeService extends BaseService {
     if (enumValues.some((v) => typeof v !== "string" || !v.trim())) {
       throw new ValidationError("enumValues must contain only non-empty strings");
     }
-    if (attributeType !== AttributeTypeEnum.STRING) {
+    if (enumValues && attributeType !== AttributeTypeEnum.STRING) {
       throw new ValidationError("enumValues are only supported for string attributes");
     }
-    if (attributeFormat !== undefined) {
-      throw new ValidationError("enumValues cannot have attributeFormat");
-    }
-    if (repeatable === true) {
+    if (repeatable) {
       throw new ValidationError("enumValues cannot be repeatable");
     }
-    if (validation !== undefined) {
+    if (validation) {
       throw new ValidationError("enumValues cannot have validation");
     }
-    if (defaultValue !== undefined) {
+    if (defaultValue) {
       throw new ValidationError("enumValues cannot have defaultValue");
     }
   }

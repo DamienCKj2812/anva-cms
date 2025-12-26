@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import { errorResponse, successResponse } from "../../utils/helper.response";
+import { successResponse } from "../../utils/helper.response";
 import { authenticate } from "../../middleware/auth";
 import { cleanupUploadedFiles } from "../../utils/helper";
 import { AppContext } from "../../utils/helper.context";
@@ -50,11 +50,9 @@ const contentController = (context: AppContext) => {
 
       const collectionObjectId = new ObjectId(contentCollectionId);
 
-      // 1️⃣ Get content collection
       const contentCollection = await contentCollectionService.findOne({ _id: collectionObjectId });
       if (!contentCollection) return res.json(successResponse([]));
 
-      // 2️⃣ Resolve locale
       const defaultLocale = await tenantLocaleService.findOne({ isDefault: true });
       const requestedLocale = locale ?? defaultLocale?.locale;
       if (!requestedLocale) return res.json(successResponse([]));
@@ -62,7 +60,6 @@ const contentController = (context: AppContext) => {
       const tenantLocaleExists = await tenantLocaleService.findOne({ locale: requestedLocale });
       if (!tenantLocaleExists) return res.json(successResponse([]));
 
-      // 3️⃣ Fetch content sorted by position
       const matchContentQuery: any = { contentCollectionId: collectionObjectId };
       if (contentId) matchContentQuery._id = new ObjectId(contentId);
 
@@ -73,7 +70,6 @@ const contentController = (context: AppContext) => {
 
       if (!content.length) return res.json(successResponse([]));
 
-      // 4️⃣ Fetch translations (no sort needed, we use a Map)
       const buildTranslationQuery = (locale: string) => {
         const q: any = { contentCollectionId: collectionObjectId, locale };
         if (contentId) q.contentId = new ObjectId(contentId);
@@ -85,19 +81,14 @@ const contentController = (context: AppContext) => {
           ? [await contentTranslationService.findOne(buildTranslationQuery(requestedLocale))].filter(Boolean)
           : await contentTranslationService.findMany(buildTranslationQuery(requestedLocale));
 
-      // 5️⃣ Detect missing translation
       const localeNotFound = !contentTranslation.some((t) => t != null);
 
-      // 6️⃣ Get full schema
       const fullSchema = await attributeService.getValidationSchema(contentCollection);
 
-      // 7️⃣ Build a Map for translations keyed by contentId
       const translationMap = new Map(contentTranslation.map((t) => [t.contentId.toString(), t.data]));
 
-      // 8️⃣ Merge shared + translation fields
       const mergedData = content.map((c) => mergeTranslatableFields(c.data ?? {}, translationMap.get(c._id.toString()) ?? {}, fullSchema));
 
-      // 9️⃣ Build final response
       const fullContents: FullContent[] = content.map((c, idx) => ({
         ...c,
         requestedLocale,

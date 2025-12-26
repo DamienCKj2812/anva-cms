@@ -19,11 +19,9 @@ const publicContentController = (context: AppContext) => {
       const { slug } = req.params;
       const { locale } = req.query as { locale?: string };
 
-      // 1. Get content collection by slug
       const contentCollection = await contentCollectionService.findOne({ slug });
       if (!contentCollection) return res.json(successResponse([]));
 
-      // 2. Resolve locale
       const defaultLocale = await tenantLocaleService.findOne({ isDefault: true });
       const requestedLocale = locale ?? defaultLocale?.locale;
       if (!requestedLocale) return res.json(successResponse([]));
@@ -31,39 +29,29 @@ const publicContentController = (context: AppContext) => {
       const tenantLocaleExists = await tenantLocaleService.findOne({ locale: requestedLocale });
       if (!tenantLocaleExists) return res.json(successResponse([]));
 
-      // 3. Fetch content
       const content: Content[] =
         contentCollection.type === ContentCollectionTypeEnum.SINGLE
           ? ([await contentService.findOne({ contentCollectionId: contentCollection._id })].filter(Boolean) as Content[])
-          : ((await contentService.findMany({ contentCollectionId: contentCollection._id }, { sort: { _id: 1 } })) as Content[]);
+          : ((await contentService.findMany({ contentCollectionId: contentCollection._id }, { sort: { position: 1 } })) as Content[]);
 
       if (!content.length) return res.json(successResponse([]));
 
-      // 4. Fetch translations
       const translationQuery: any = { contentCollectionId: contentCollection._id, locale: requestedLocale };
       const contentTranslation: any[] =
         contentCollection.type === ContentCollectionTypeEnum.SINGLE
           ? [await contentTranslationService.findOne(translationQuery)].filter(Boolean)
-          : await contentTranslationService.findMany(translationQuery, { sort: { contentId: 1 } });
+          : await contentTranslationService.findMany(translationQuery);
 
-      // 5. Detect missing translation
       const localeNotFound = !contentTranslation.some((t) => t && Object.keys(t.data || {}).length > 0);
 
-      // 6. Get object schema
       const fullSchema = await attributeService.getValidationSchema(contentCollection);
 
-      // 7. Merge per content item
-      const mergedData = content.map((c, idx) =>
-        mergeTranslatableFields(
-          c.data ?? {}, // shared data
-          contentTranslation[idx]?.data ?? {}, // translation data
-          fullSchema, // object schema
-        ),
-      );
+      const translationMap = new Map(contentTranslation.map((t) => [t.contentId.toString(), t.data]));
+
+      const mergedData = content.map((c) => mergeTranslatableFields(c.data ?? {}, translationMap.get(c._id.toString()) ?? {}, fullSchema));
 
       const populatedData = await mediaAssetService.populateMediaAsset(fullSchema, mergedData);
 
-      // 8. Return merged content
       return res.json(successResponse(populatedData));
     } catch (err) {
       next(err);

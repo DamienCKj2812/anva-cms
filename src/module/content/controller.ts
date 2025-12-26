@@ -50,11 +50,11 @@ const contentController = (context: AppContext) => {
 
       const collectionObjectId = new ObjectId(contentCollectionId);
 
-      // 1. Get content collection
+      // 1️⃣ Get content collection
       const contentCollection = await contentCollectionService.findOne({ _id: collectionObjectId });
       if (!contentCollection) return res.json(successResponse([]));
 
-      // 2. Resolve locale
+      // 2️⃣ Resolve locale
       const defaultLocale = await tenantLocaleService.findOne({ isDefault: true });
       const requestedLocale = locale ?? defaultLocale?.locale;
       if (!requestedLocale) return res.json(successResponse([]));
@@ -62,18 +62,18 @@ const contentController = (context: AppContext) => {
       const tenantLocaleExists = await tenantLocaleService.findOne({ locale: requestedLocale });
       if (!tenantLocaleExists) return res.json(successResponse([]));
 
-      // 3. Fetch content
+      // 3️⃣ Fetch content sorted by position
       const matchContentQuery: any = { contentCollectionId: collectionObjectId };
       if (contentId) matchContentQuery._id = new ObjectId(contentId);
 
       const content: Content[] =
         contentCollection.type === ContentCollectionTypeEnum.SINGLE
           ? ([await contentService.findOne(matchContentQuery)].filter(Boolean) as Content[])
-          : ((await contentService.findMany(matchContentQuery, { sort: { _id: 1 } })) as Content[]);
+          : ((await contentService.findMany(matchContentQuery, { sort: { position: 1 } })) as Content[]);
 
       if (!content.length) return res.json(successResponse([]));
 
-      // 4. Fetch translations
+      // 4️⃣ Fetch translations (no sort needed, we use a Map)
       const buildTranslationQuery = (locale: string) => {
         const q: any = { contentCollectionId: collectionObjectId, locale };
         if (contentId) q.contentId = new ObjectId(contentId);
@@ -83,26 +83,21 @@ const contentController = (context: AppContext) => {
       const contentTranslation: any[] =
         contentCollection.type === ContentCollectionTypeEnum.SINGLE
           ? [await contentTranslationService.findOne(buildTranslationQuery(requestedLocale))].filter(Boolean)
-          : await contentTranslationService.findMany(buildTranslationQuery(requestedLocale), {
-              sort: { contentId: 1 },
-            });
+          : await contentTranslationService.findMany(buildTranslationQuery(requestedLocale));
 
-      // 5. Detect missing translation
+      // 5️⃣ Detect missing translation
       const localeNotFound = !contentTranslation.some((t) => t != null);
 
-      // 6. IMPORTANT: schema MUST be OBJECT schema (not array)
+      // 6️⃣ Get full schema
       const fullSchema = await attributeService.getValidationSchema(contentCollection);
 
-      // 7. Merge per content item (THIS IS THE KEY FIX)
-      const mergedData = content.map((c, idx) =>
-        mergeTranslatableFields(
-          c.data ?? {}, // shared data (object)
-          contentTranslation[idx]?.data ?? {}, // translation data (object)
-          fullSchema, // object schema
-        ),
-      );
+      // 7️⃣ Build a Map for translations keyed by contentId
+      const translationMap = new Map(contentTranslation.map((t) => [t.contentId.toString(), t.data]));
 
-      // 8. Build response
+      // 8️⃣ Merge shared + translation fields
+      const mergedData = content.map((c) => mergeTranslatableFields(c.data ?? {}, translationMap.get(c._id.toString()) ?? {}, fullSchema));
+
+      // 9️⃣ Build final response
       const fullContents: FullContent[] = content.map((c, idx) => ({
         ...c,
         requestedLocale,
@@ -147,6 +142,19 @@ const contentController = (context: AppContext) => {
       if (!content) throw new NotFoundError("content not found");
       const deletedContent = await contentService.delete(content);
       res.status(200).json(successResponse(deletedContent));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post("/:contentCollectionId/update-position", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const contentCollection = await contentCollectionService.findOne({ _id: new ObjectId(req.params.contentCollectionId) });
+      if (!contentCollection) {
+        throw new NotFoundError("content collection not found");
+      }
+      const content = await contentService.updatePosition(req.body, contentCollection);
+      res.status(201).json(successResponse(content));
     } catch (err) {
       next(err);
     }

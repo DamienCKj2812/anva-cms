@@ -91,6 +91,7 @@ class ContentCollectionService extends BaseService {
       displayName: displayName.trim(),
       type,
       schema: null,
+      contentCount: 0,
       createdAt: new Date(),
       createdBy,
     };

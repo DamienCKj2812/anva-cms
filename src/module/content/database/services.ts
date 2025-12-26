@@ -5,7 +5,7 @@ import { filterFields, WithMetaData } from "../../../utils/helper";
 import { QueryOptions, findWithOptions } from "../../../utils/helper";
 import { AppContext } from "../../../utils/helper.context";
 import { BaseService } from "../../core/base-service";
-import { Content, ContentStatusEnum, CreateContentData, UpdateContentData } from "./models";
+import { Content, ContentStatusEnum, CreateContentData, ReorderContentsDTO, UpdateContentData } from "./models";
 import ContentCollectionService from "../../content-collection/database/services";
 import { ContentCollection, ContentCollectionTypeEnum } from "../../content-collection/database/models";
 import { getCurrentUserId } from "../../../utils/helper.auth";
@@ -91,12 +91,21 @@ class ContentService extends BaseService {
     const validatedData = await this.createValidation(data, contentCollection, fullSchema);
     const userId = getCurrentUserId(this.context);
 
+    const updatedContentCollection = await this.contentCollectionService
+      .getCollection()
+      .findOneAndUpdate({ _id: contentCollection._id }, { $inc: { contentCount: 1 } }, { returnDocument: "before" });
+
+    if (!updatedContentCollection) {
+      throw new Error("failed to create content");
+    }
+
     const newContent: Content = {
       _id: new ObjectId(),
       tenantId: contentCollection.tenantId,
       contentCollectionId: contentCollection._id!,
       status: validatedData.status as ContentStatusEnum,
       data: {}, // we'll fill after separateTranslatableFields
+      position: updatedContentCollection?.contentCount,
       createdAt: new Date(),
       updatedAt: null,
       createdBy: userId,
@@ -222,8 +231,53 @@ class ContentService extends BaseService {
 
   async delete(content: Content): Promise<Content> {
     await this.contentTranslationService.getCollection().deleteMany({ contentId: content._id });
-    await this.collection.deleteOne({ _id: content._id });
+    const result = await this.collection.deleteOne({ _id: content._id });
+    if (result.deletedCount !== 1) {
+      throw new Error("failed to delete content");
+    }
+    await this.contentCollectionService.getCollection().updateOne({ _id: content.contentCollectionId }, { $inc: { contentCount: -1 } });
+
     return content;
+  }
+
+  async updatePosition(data: ReorderContentsDTO, contentCollection: ContentCollection) {
+    const { contentIds } = data;
+
+    if (!Array.isArray(contentIds) || contentIds.length === 0) {
+      throw new BadRequestError("contentIds must be a non-empty array");
+    }
+
+    const invalidIds = contentIds.filter((c) => !c || !ObjectId.isValid(c));
+    if (invalidIds.length > 0) {
+      throw new BadRequestError("One or more contentIds are invalid");
+    }
+
+    const allContents = await this.collection.find({ contentCollectionId: contentCollection._id }).project({ _id: 1 }).toArray();
+
+    const allIds = allContents.map((c) => c._id.toString());
+
+    const missingFromClient = allIds.filter((id) => !contentIds.includes(id));
+    if (missingFromClient.length > 0) {
+      throw new BadRequestError("Some content IDs are missing from the request");
+    }
+
+    const extraIds = contentIds.filter((id) => !allIds.includes(id));
+    if (extraIds.length > 0) {
+      throw new BadRequestError("One or more content IDs do not exist in this collection");
+    }
+
+    const bulkOps = contentIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: new ObjectId(id) },
+        update: { $set: { position: index } },
+      },
+    }));
+
+    if (bulkOps.length > 0) {
+      await this.collection.bulkWrite(bulkOps);
+    }
+
+    return { status: "success" };
   }
 
   async validateMediaAssetInContent(tenantId: ObjectId, data: any, schema: any) {

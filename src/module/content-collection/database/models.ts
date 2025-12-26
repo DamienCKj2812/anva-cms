@@ -12,6 +12,7 @@ export interface ContentCollection {
   displayName: string;
   type: ContentCollectionTypeEnum;
   schema: any | null;
+  contentCount: number;
   createdAt: Date;
   updatedAt?: Date | null;
   createdBy: ObjectId;

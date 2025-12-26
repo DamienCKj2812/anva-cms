@@ -23,7 +23,6 @@ import AttributeComponentService from "../../attribute-component/database/servic
 import { AttributeComponent } from "../../attribute-component/database/models";
 import ContentService from "../../content/database/services";
 import ContentTranslationService from "../../content-translation/database/services";
-import validation from "ajv/dist/vocabularies/validation";
 
 class AttributeService extends BaseService {
   private db: Db;
@@ -463,6 +462,7 @@ class AttributeService extends BaseService {
       await Promise.all([
         this.contentService.getCollection().deleteMany({ contentCollectionId: collectionId }),
         this.contentTranslationService.getCollection().deleteMany({ contentCollectionId: collectionId }),
+        this.contentCollectionService.getCollection().updateOne({ _id: collectionId }, { $set: { contentCount: 0 } }),
       ]);
 
       await this.contentCollectionService.buildSchema(contentCollection);

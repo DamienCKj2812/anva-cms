@@ -14,6 +14,7 @@ export interface Content {
   contentCollectionId: ObjectId;
   data: any; // Shared fields (non-translatable)
   status: ContentStatusEnum;
+  position: number;
   createdAt: Date;
   updatedAt: Date | null;
   createdBy: ObjectId;
@@ -40,4 +41,8 @@ export interface FullContent extends Content {
   localeNotFound: boolean;
   tenantLocale: TenantLocale;
   fullData: any;
+}
+
+export interface ReorderContentsDTO {
+  contentIds: string[]; // ordered array, top → bottom
 }

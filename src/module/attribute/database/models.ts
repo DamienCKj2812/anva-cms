@@ -102,3 +102,17 @@ export interface UpdateComponentAttributeDto extends UpdateAttributeBaseDto {
   componentRefId?: string;
   repeatable?: boolean;
 }
+
+export interface ReorderAttributeDto {
+  /**
+   * Key: contentCollectionId
+   * Value: ordered list of root-level attributeIds
+   */
+  contentCollectionAttributeOrder?: Record<string, string[]>;
+
+  /**
+   * Key: componentRefId
+   * Value: ordered list of attributeIds inside that component
+   */
+  componentAttributeOrder?: Record<string, string[]>;
+}

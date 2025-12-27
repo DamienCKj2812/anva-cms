@@ -132,6 +132,15 @@ const attributeController = (context: AppContext) => {
     }
   });
 
+  router.post("/update-position", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await attributeService.updatePosition(req.body);
+      res.status(200).json(successResponse(data));
+    } catch (err) {
+      next(err);
+    }
+  });
+
   return router;
 };
 

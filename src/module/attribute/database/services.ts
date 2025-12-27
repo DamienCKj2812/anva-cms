@@ -12,6 +12,7 @@ import {
   AttributeTypeEnum,
   CreateComponentAttributeDTO,
   CreatePrimitiveAttributeDTO,
+  ReorderAttributeDto,
   UpdateComponentAttributeDto,
   UpdatePrimitiveAttributeDTO,
   ValidationRules,
@@ -52,11 +53,16 @@ class AttributeService extends BaseService {
     "maximum",
     "pattern",
   ] as const);
+  private static readonly ALLOWED_UPDATE_POSITION_FIELDS: ReadonlySet<keyof ReorderAttributeDto> = new Set([
+    "contentCollectionAttributeOrder",
+    "componentAttributeOrder",
+  ] as const);
 
   private contentCollectionService: ContentCollectionService;
   private attributeComponentService: AttributeComponentService;
   private contentService: ContentService;
   private contentTranslationService: ContentTranslationService;
+  private attributeService: AttributeService;
 
   constructor(context: AppContext) {
     super(context);
@@ -67,6 +73,7 @@ class AttributeService extends BaseService {
   async init() {
     this.contentCollectionService = this.getService("ContentCollectionService");
     this.attributeComponentService = this.getService("AttributeComponentService");
+    this.attributeService = this.getService("AttributeService");
     this.contentService = this.getService("ContentService");
     this.contentTranslationService = this.getService("ContentTranslationService");
   }
@@ -481,6 +488,103 @@ class AttributeService extends BaseService {
     return { status: "success", data: attribute };
   }
 
+  private async updatePositionValidation(dto: ReorderAttributeDto): Promise<ReorderAttributeDto> {
+    const { contentCollectionAttributeOrder, componentAttributeOrder } = dto;
+
+    // Throw if both are missing or empty
+    if (
+      (!contentCollectionAttributeOrder || Object.keys(contentCollectionAttributeOrder).length === 0) &&
+      (!componentAttributeOrder || Object.keys(componentAttributeOrder).length === 0)
+    ) {
+      throw new BadRequestError("No valid fields provided for update");
+    }
+
+    // Validate contentCollectionAttributeOrder
+    if (contentCollectionAttributeOrder) {
+      for (const [contentCollectionId, orderedAttributeIds] of Object.entries(contentCollectionAttributeOrder)) {
+        if (!ObjectId.isValid(contentCollectionId)) {
+          throw new ValidationError(`Invalid contentCollectionId: ${contentCollectionId}`);
+        }
+
+        const attributes = await this.attributeService.findMany({
+          contentCollectionId: new ObjectId(contentCollectionId),
+        });
+
+        const existingIds = attributes.map((a) => a._id.toString());
+
+        this.assertExactMatch(existingIds, orderedAttributeIds, `Attribute order mismatch for contentCollection ${contentCollectionId}`);
+      }
+    }
+
+    // Validate componentAttributeOrder
+    if (componentAttributeOrder) {
+      for (const [componentRefId, orderedAttributeIds] of Object.entries(componentAttributeOrder)) {
+        if (!ObjectId.isValid(componentRefId)) {
+          throw new ValidationError(`Invalid componentRefId: ${componentRefId}`);
+        }
+
+        const component = await this.attributeComponentService.findOne({
+          _id: new ObjectId(componentRefId),
+        });
+
+        if (!component) {
+          throw new ValidationError(`AttributeComponent not found: ${componentRefId}`);
+        }
+
+        const existingIds = component.attributes.map((id) => id.toString());
+
+        this.assertExactMatch(existingIds, orderedAttributeIds, `Attribute order mismatch for component ${componentRefId}`);
+      }
+    }
+
+    return dto;
+  }
+
+  public async updatePosition(dto: ReorderAttributeDto) {
+    const filteredUpdateData = filterFields(dto, AttributeService.ALLOWED_UPDATE_POSITION_FIELDS);
+
+    const { contentCollectionAttributeOrder, componentAttributeOrder } = await this.updatePositionValidation(filteredUpdateData);
+
+    const bulkOps: any[] = [];
+
+    if (contentCollectionAttributeOrder) {
+      Object.entries(contentCollectionAttributeOrder).forEach(([contentCollectionId, attributeIds]) => {
+        attributeIds.forEach((id, index) => {
+          bulkOps.push({
+            updateOne: {
+              filter: {
+                _id: new ObjectId(id),
+                contentCollectionId: new ObjectId(contentCollectionId),
+                componentRefId: null,
+              },
+              update: { $set: { position: index } },
+            },
+          });
+        });
+      });
+    }
+
+    if (componentAttributeOrder) {
+      Object.entries(componentAttributeOrder).forEach(([componentRefId, attributeIds]) => {
+        attributeIds.forEach((id, index) => {
+          bulkOps.push({
+            updateOne: {
+              filter: {
+                _id: new ObjectId(id),
+                componentRefId: new ObjectId(componentRefId),
+              },
+              update: { $set: { position: index } },
+            },
+          });
+        });
+      });
+    }
+
+    if (bulkOps.length > 0) {
+      await this.collection.bulkWrite(bulkOps);
+    }
+  }
+
   public validateAttributeValidation(type: AttributeTypeEnum, validation?: ValidationRules, format?: AttributeFormatEnum) {
     if (!validation) return;
     const { minLength, maxLength, minimum, maximum, pattern } = validation;
@@ -715,6 +819,22 @@ class AttributeService extends BaseService {
     if (v.maximum !== undefined) rules.maximum = v.maximum;
     if (v.pattern !== undefined) rules.pattern = v.pattern;
     return rules;
+  }
+
+  private assertExactMatch(existingIds: string[], orderedIds: string[], errorMessage: string) {
+    const existingSet = new Set(existingIds);
+    const orderedSet = new Set(orderedIds);
+
+    if (orderedSet.size !== orderedIds.length) {
+      throw new ValidationError("Duplicate attributeId detected");
+    }
+
+    const missing = [...existingSet].filter((id) => !orderedSet.has(id));
+    const extra = [...orderedSet].filter((id) => !existingSet.has(id));
+
+    if (missing.length || extra.length) {
+      throw new ValidationError(errorMessage);
+    }
   }
 }
 

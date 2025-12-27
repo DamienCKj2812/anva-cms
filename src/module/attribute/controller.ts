@@ -76,6 +76,23 @@ const attributeController = (context: AppContext) => {
     }
   });
 
+  router.post("/get-order-map", async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { contentCollectionId } = req.query as { contentCollectionId?: string };
+      if (!contentCollectionId) {
+        throw new NotFoundError("contentCollectionId is required");
+      }
+      const contentCollection = await contentCollectionService.findOne({ _id: new ObjectId(contentCollectionId) });
+      if (!contentCollection) {
+        throw new NotFoundError("content collection not found");
+      }
+      const orderMap = await attributeService.getOrderMap(contentCollection);
+      res.status(200).json(successResponse(orderMap));
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post("/:id/update-primitive", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params;

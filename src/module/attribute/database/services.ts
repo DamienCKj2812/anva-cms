@@ -441,6 +441,39 @@ class AttributeService extends BaseService {
     return await this.collection.findOne({ _id: new ObjectId(id) });
   }
 
+  async getOrderMap(contentCollection: ContentCollection): Promise<Record<string, string[]>> {
+    const attributes = await this.collection.find({ contentCollectionId: contentCollection._id }).sort({ position: 1 }).toArray();
+
+    const orderMap: Record<string, string[]> = {};
+
+    orderMap["root"] = attributes.map((attr) => attr._id.toString());
+
+    const componentIdsSet = new Set<string>();
+    for (const attr of attributes) {
+      if (attr.componentRefId) {
+        componentIdsSet.add(attr.componentRefId.toString());
+      }
+    }
+
+    if (componentIdsSet.size > 0) {
+      const componentAttributes = await this.collection
+        .find({
+          componentRefId: { $in: Array.from(componentIdsSet).map((id) => new ObjectId(id)) },
+          attributeKind: AttributeKindEnum.COMPONENT_PRIMITIVE,
+        })
+        .sort({ position: 1 })
+        .toArray();
+
+      for (const componentId of componentIdsSet) {
+        orderMap[componentId] = componentAttributes
+          .filter((attr) => attr.componentRefId?.toString() === componentId)
+          .map((attr) => attr._id.toString());
+      }
+    }
+
+    return orderMap;
+  }
+
   async findOne(filter: Partial<Attribute>, options?: FindOptions<Attribute>): Promise<Attribute | null> {
     return await this.collection.findOne(filter, options);
   }

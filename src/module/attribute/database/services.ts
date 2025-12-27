@@ -588,7 +588,7 @@ class AttributeService extends BaseService {
               filter: {
                 _id: new ObjectId(id),
                 contentCollectionId: new ObjectId(contentCollectionId),
-                componentRefId: null,
+                componentRefId: undefined,
               },
               update: { $set: { position: index } },
             },

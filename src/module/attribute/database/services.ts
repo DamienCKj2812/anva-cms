@@ -441,7 +441,7 @@ class AttributeService extends BaseService {
     return await this.collection.findOne({ _id: new ObjectId(id) });
   }
 
-  async getOrderMap(contentCollection: ContentCollection): Promise<Record<string, string[]>> {
+  async getOrderMapForContentCollection(contentCollection: ContentCollection): Promise<Record<string, string[]>> {
     const attributes = await this.collection.find({ contentCollectionId: contentCollection._id }).sort({ position: 1 }).toArray();
 
     const orderMap: Record<string, string[]> = {};
@@ -472,6 +472,23 @@ class AttributeService extends BaseService {
     }
 
     return orderMap;
+  }
+
+  async getOrderMapForComponent(attributeComponent: AttributeComponent): Promise<Record<string, string[]>> {
+    const componentId = attributeComponent._id.toString();
+
+    const componentAttributes = await this.collection
+      .find({
+        componentRefId: attributeComponent._id,
+        attributeKind: AttributeKindEnum.COMPONENT_PRIMITIVE,
+      })
+      .sort({ position: 1 })
+      .project({ _id: 1 })
+      .toArray();
+
+    return {
+      [componentId]: componentAttributes.map((a) => a._id.toString()),
+    };
   }
 
   async findOne(filter: Partial<Attribute>, options?: FindOptions<Attribute>): Promise<Attribute | null> {

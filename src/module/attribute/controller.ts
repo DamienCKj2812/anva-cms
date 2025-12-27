@@ -10,6 +10,7 @@ import { getCurrentUserId } from "../../utils/helper.auth";
 const attributeController = (context: AppContext) => {
   const router = Router();
   const attributeService = context.diContainer!.get("AttributeService");
+  const attributeComponentService = context.diContainer!.get("AttributeComponentService");
   const contentCollectionService = context.diContainer!.get("ContentCollectionService");
 
   router.use(authenticate(context));
@@ -78,15 +79,41 @@ const attributeController = (context: AppContext) => {
 
   router.post("/get-order-map", async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { contentCollectionId } = req.query as { contentCollectionId?: string };
-      if (!contentCollectionId) {
-        throw new NotFoundError("contentCollectionId is required");
+      const { contentCollectionId, componentRefId } = req.query as {
+        contentCollectionId?: string;
+        componentRefId?: string;
+      };
+      if (!contentCollectionId && !componentRefId) {
+        throw new NotFoundError("contentCollectionId or componentRefId is required");
       }
-      const contentCollection = await contentCollectionService.findOne({ _id: new ObjectId(contentCollectionId) });
-      if (!contentCollection) {
-        throw new NotFoundError("content collection not found");
+      if (contentCollectionId && componentRefId) {
+        throw new NotFoundError("contentCollectionId and componentRefId cannot be provided together");
       }
-      const orderMap = await attributeService.getOrderMap(contentCollection);
+
+      let orderMap: Record<string, string[]>;
+
+      if (contentCollectionId) {
+        const contentCollection = await contentCollectionService.findOne({
+          _id: new ObjectId(contentCollectionId),
+        });
+
+        if (!contentCollection) {
+          throw new NotFoundError("content collection not found");
+        }
+
+        orderMap = await attributeService.getOrderMapForContentCollection(contentCollection);
+      } else {
+        const attributeComponent = await attributeComponentService.findOne({
+          _id: new ObjectId(componentRefId!),
+        });
+
+        if (!attributeComponent) {
+          throw new NotFoundError("attribute component not found");
+        }
+
+        orderMap = await attributeService.getOrderMapForComponent(attributeComponent);
+      }
+
       res.status(200).json(successResponse(orderMap));
     } catch (err) {
       next(err);
